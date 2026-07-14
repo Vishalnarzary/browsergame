@@ -106,6 +106,7 @@ type GameData = {
   strikeId: number;
   nextLaserAt: number;
   nextKickAt: number;
+  lastPowerSoundAt: number;
   recentPowerupKinds: PowerupKind[];
   runToken: number;
 };
@@ -200,7 +201,7 @@ function makeGame(challengeIndex = 0): GameData {
     sideHits: 0, chaserBaits: 0, dodges: 0, slaps: 0, flowActivations: 0, challengeIndex, challengeDone: false, recentEvents: [],
     speedControl: 0, speedFactor: 1, jumpStartedAt: -10, jumpUntil: -10, jumpCooldownUntil: 0, hitStopUntil: 0,
     scheduledPowerups: [], mapPowerups: [], activePowerups: [], powerStrikes: [], nextPowerupBatchAt: 0,
-    powerupBatchPending: false, powerupId: 0, strikeId: 0, nextLaserAt: 0, nextKickAt: 0, recentPowerupKinds: [], runToken: Math.random(),
+    powerupBatchPending: false, powerupId: 0, strikeId: 0, nextLaserAt: 0, nextKickAt: 0, lastPowerSoundAt: -10, recentPowerupKinds: [], runToken: Math.random(),
   };
 }
 
@@ -545,8 +546,12 @@ export default function CorporateWarsGame() {
     game.focus = Math.min(100, game.focus + 8);
     game.bestCombo = Math.max(game.bestCombo, game.combo);
     game.powerStrikes.push({ id: ++game.strikeId, kind, fromLane: game.selectedLane, toLane: target.lane, targetZ: target.z, bornAt: game.elapsed });
+    if (game.elapsed - game.lastPowerSoundAt > 0.09) {
+      game.lastPowerSoundAt = game.elapsed;
+      playSlapImpact(kind === "long_leg" ? "leg_break" : "launch");
+    }
     tone(kind === "laser" ? 920 : kind === "titan" ? 92 : 240, 0.12, kind === "laser" ? "sawtooth" : "triangle", 0.045, kind === "laser" ? -360 : 160);
-  }, [tone]);
+  }, [playSlapImpact, tone]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -636,9 +641,13 @@ export default function CorporateWarsGame() {
           for (const item of game.items) if (!item.resolved && poweredLanes.includes(item.lane) && item.z > -5 && item.z < 7) {
             item.resolved = true; game.score += 35;
             game.powerStrikes.push({ id: ++game.strikeId, kind: "titan", fromLane: game.selectedLane, toLane: item.lane, targetZ: item.z, bornAt: game.elapsed });
+            if (game.elapsed - game.lastPowerSoundAt > 0.09) { game.lastPowerSoundAt = game.elapsed; playSlapImpact("launch"); }
           }
           const crushed = game.pursuers.filter((pursuer) => poweredLanes.some((lane) => Math.abs(pursuer.lane - lane) < 0.34) && pursuer.gap < 4.6);
-          if (crushed.length) { game.score += crushed.length * 60; game.pursuers = game.pursuers.filter((pursuer) => !crushed.includes(pursuer)); }
+          if (crushed.length) {
+            game.score += crushed.length * 60; game.pursuers = game.pursuers.filter((pursuer) => !crushed.includes(pursuer));
+            if (game.elapsed - game.lastPowerSoundAt > 0.09) { game.lastPowerSoundAt = game.elapsed; playSlapImpact("launch"); }
+          }
         }
         if (hasPowerup(game, "laser") && game.elapsed >= game.nextLaserAt) {
           const laserTarget = game.targets.filter((target) => !target.resolved && target.lane === game.selectedLane && target.z > -58 && target.z < 4).sort((a, b) => b.z - a.z)[0];
@@ -674,6 +683,7 @@ export default function CorporateWarsGame() {
             if (hasPowerup(game, "phase")) {
               item.resolved = true; game.score += 30; game.focus = Math.min(100, game.focus + 7);
               game.powerStrikes.push({ id: ++game.strikeId, kind: "phase", fromLane: game.selectedLane, toLane: item.lane, targetZ: item.z, bornAt: game.elapsed });
+              if (game.elapsed - game.lastPowerSoundAt > 0.09) { game.lastPowerSoundAt = game.elapsed; playSlapImpact("launch"); }
             } else if (item.type === "table" && jumpProgress > 0.13 && jumpProgress < 0.92) {
               item.resolved = true; game.dodges += 1; game.score += 45; game.focus = Math.min(100, game.focus + 12);
               showFeedback("TABLE VAULT  +45", "clean"); tone(390, 0.24, "sine", 0.04, 240); tone(840, 0.07, "triangle", 0.018, -120);
@@ -697,6 +707,7 @@ export default function CorporateWarsGame() {
           if (hasPowerup(game, "phase")) {
             game.score += 55;
             game.powerStrikes.push({ id: ++game.strikeId, kind: "phase", fromLane: game.selectedLane, toLane: Math.round(caught.lane), targetZ: 5 + caught.gap, bornAt: game.elapsed });
+            if (game.elapsed - game.lastPowerSoundAt > 0.09) { game.lastPowerSoundAt = game.elapsed; playSlapImpact("launch"); }
           } else {
             game.suspicion += 24; game.combo = 1; game.stumbleUntil = game.elapsed + 0.55;
             showFeedback("CAUGHT!  +24% SUSPICION", "danger"); tone(82, 0.4, "sawtooth", 0.08, -30);
@@ -757,7 +768,7 @@ export default function CorporateWarsGame() {
     };
     animation = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(animation);
-  }, [displayEvent, fetchNovelty, fetchPowerupBatch, finishGame, resolvePowerHit, resolveSlap, showFeedback, spawnItem, spawnTarget, spawnWave, tone]);
+  }, [displayEvent, fetchNovelty, fetchPowerupBatch, finishGame, playSlapImpact, resolvePowerHit, resolveSlap, showFeedback, spawnItem, spawnTarget, spawnWave, tone]);
 
   const onCanvasClick = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();

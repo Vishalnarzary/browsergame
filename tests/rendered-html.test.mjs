@@ -68,6 +68,8 @@ test("ships the strategic 3D loop and keeps the Groq key server-side", async () 
   assert.match(game, /\/audio\/bone-break\.mp3/);
   assert.match(game, /playSlapImpact/);
   assert.match(game, /playNoiseBurst/);
+  assert.match(game, /lastPowerSoundAt/);
+  assert.match(game, /kind === "long_leg" \? "leg_break" : "launch"/);
   assert.match(game, /fetchPowerupBatch/);
   assert.match(game, /nextPowerupBatchAt \+= 60/);
   assert.match(game, /titan/);
@@ -85,11 +87,18 @@ test("ships the strategic 3D loop and keeps the Groq key server-side", async () 
   assert.match(scene, /target\.hitOutcome === "arm_break"/);
   assert.match(scene, /target\.hitOutcome === "leg_break"/);
   assert.match(scene, /boneShard/);
+  assert.match(scene, /rightArm\.position\.set/);
+  assert.match(scene, /leftLeg\.position\.set/);
+  assert.match(scene, /age \* 12\.2/);
   assert.match(scene, /speedMarkers/);
   assert.match(scene, /scene\.rotation\.y = Math\.PI/);
   assert.match(scene, /new THREE\.SpriteMaterial/);
   assert.match(scene, /updateRoleLabels/);
   assert.match(scene, /depthTest: false/);
+  assert.match(scene, /strokeText/);
+  assert.match(scene, /backed = false/);
+  assert.match(scene, /true, ""/);
+  assert.doesNotMatch(scene, /mateB/);
   assert.match(scene, /roleTexture/);
   assert.match(scene, /new THREE\.CapsuleGeometry/);
   assert.match(scene, /new THREE\.SphereGeometry/);

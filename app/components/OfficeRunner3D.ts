@@ -83,21 +83,22 @@ function limb(material: THREE.Material, length: number, radius: number) {
   return pivot;
 }
 
-function roleTexture(label: string, color: number) {
+function roleTexture(label: string, color: number, backed = false) {
   const canvas = document.createElement("canvas");
   canvas.width = 512; canvas.height = 160;
   const context = canvas.getContext("2d")!;
-  context.shadowColor = "rgba(0,0,0,.48)";
-  context.shadowBlur = 18;
-  context.fillStyle = "rgba(5,15,23,.96)";
-  context.beginPath(); context.roundRect(10, 10, 492, 140, 34); context.fill();
-  context.shadowBlur = 0;
-  context.strokeStyle = `#${color.toString(16).padStart(6, "0")}`;
-  context.lineWidth = 10; context.stroke();
+  if (backed) {
+    context.fillStyle = "rgba(5,15,23,.96)";
+    context.beginPath(); context.roundRect(10, 10, 492, 140, 34); context.fill();
+  }
   context.fillStyle = "#ffffff";
   const size = label.length > 9 ? 60 : label.length > 6 ? 70 : 82;
   context.font = `900 ${size}px Arial`;
   context.textAlign = "center"; context.textBaseline = "middle";
+  context.strokeStyle = backed ? `#${color.toString(16).padStart(6, "0")}` : "rgba(0,0,0,.92)";
+  context.lineWidth = backed ? 9 : 15;
+  context.lineJoin = "round";
+  context.strokeText(label, 256, 84);
   context.fillText(label, 256, 84);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -238,13 +239,12 @@ function createActivityScene(activity: OfficeActivity, bodyColor: number, suitCo
     primary.position.set(0, 0, 0.25);
     primary.rotation.y = 0;
     const mateA = createPerson(0xe7b956, 0x426a7d, false, "COLLEAGUE");
-    const mateB = createPerson(0x78d9ca, 0x72547f, false, "INTERN");
-    mateA.scale.setScalar(0.88); mateB.scale.setScalar(0.88);
-    mateA.position.set(-1.1, 0, -0.38); mateB.position.set(1.05, 0, -0.42);
-    mateA.rotation.y = -0.65; mateB.rotation.y = 0.7;
-    mateA.userData.activity = "chatting"; mateB.userData.activity = "chatting";
-    mateA.userData.seed = seed + 1.4; mateB.userData.seed = seed + 2.7;
-    group.add(mateA, mateB);
+    mateA.scale.setScalar(0.88);
+    mateA.position.set(-1.15, 0, -0.38);
+    mateA.rotation.y = -0.65;
+    mateA.userData.activity = "chatting";
+    mateA.userData.seed = seed + 1.4;
+    group.add(mateA);
   } else if (activity === "phone") {
     const phone = mesh(new THREE.BoxGeometry(0.16, 0.32, 0.06), new THREE.MeshStandardMaterial({ color: 0x05090e }));
     phone.position.set(0.46, 2.72, -0.22);
@@ -300,10 +300,13 @@ function walkRigs(root: THREE.Object3D, callback: (rig: Rig) => void) {
   });
 }
 
-function updateRoleLabels(root: THREE.Object3D, z: number) {
+function updateRoleLabels(root: THREE.Object3D, z: number, visible = true) {
   const distanceScale = 1 + THREE.MathUtils.clamp((-z - 8) / 70, 0, 1) * 1.3;
   root.traverse((object) => {
-    if (object instanceof THREE.Sprite && object.userData.roleLabel) object.scale.set(2.9 * distanceScale, 0.9 * distanceScale, 1);
+    if (object instanceof THREE.Sprite && object.userData.roleLabel) {
+      object.visible = visible;
+      object.scale.set(2.9 * distanceScale, 0.9 * distanceScale, 1);
+    }
   });
 }
 
@@ -520,7 +523,7 @@ export class OfficeRunner3D {
       const ring = mesh(new THREE.TorusGeometry(0.72 + index * 0.17, 0.045, 8, 28), new THREE.MeshBasicMaterial({ color: style.color, transparent: true, opacity: 0.74, depthWrite: false }), false);
       ring.position.y = 1.08; ring.rotation.x = index ? Math.PI / 2 : 0; ring.userData.powerRing = index; group.add(ring);
     }
-    const badge = mesh(new THREE.PlaneGeometry(1.35, 0.45), new THREE.MeshBasicMaterial({ map: roleTexture(style.label, style.color), transparent: true, side: THREE.DoubleSide, depthWrite: false }), false);
+    const badge = mesh(new THREE.PlaneGeometry(1.35, 0.45), new THREE.MeshBasicMaterial({ map: roleTexture(style.label, style.color, true), transparent: true, side: THREE.DoubleSide, depthWrite: false }), false);
     badge.position.set(0, 2.05, 0.05); group.add(badge);
     const beam = mesh(new THREE.CylinderGeometry(0.03, 0.22, 1.35, 12, 1, true), new THREE.MeshBasicMaterial({ color: style.color, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false }), false);
     beam.position.y = 0.6; group.add(beam);
@@ -624,30 +627,29 @@ export class OfficeRunner3D {
           primaryRig.rotation.copy(primaryRig.userData.hitBaseRotation);
           if (target.hitOutcome === "arm_break") {
             const fall = THREE.MathUtils.clamp((age - 0.1) / 0.62, 0, 1);
-            primaryRig.userData.rightArm.rotation.set(-0.7, 0, direction * -2.35);
-            primaryRig.userData.rightArm.position.x = 0.57 + direction * age * 0.48;
-            primaryRig.rotation.z += direction * fall * 1.48;
-            primaryRig.position.x += direction * fall * 0.58;
-            primaryRig.position.y += Math.sin(Math.min(1, age * 5) * Math.PI) * 0.28;
+            primaryRig.userData.rightArm.rotation.set(age * 8.5 - 0.7, age * 5.2, direction * -2.35);
+            primaryRig.userData.rightArm.position.set(0.57 + direction * age * 3.2, 2.55 + age * 3.4, age * 1.35);
+            primaryRig.userData.leftArm.rotation.z = direction * (0.8 + fall * 0.7);
+            primaryRig.rotation.z += direction * fall * 1.52;
+            primaryRig.position.x += direction * fall * 0.82;
+            primaryRig.position.y += Math.sin(Math.min(1, age * 4.3) * Math.PI) * 0.42;
           } else if (target.hitOutcome === "leg_break") {
-            const arc = Math.sin(Math.min(1, age / 1.12) * Math.PI);
-            primaryRig.userData.leftLeg.rotation.set(1.15 + age * 2.2, 0, 1.25);
-            primaryRig.userData.rightLeg.rotation.set(-1.15 - age * 2.2, 0, -1.25);
-            primaryRig.userData.leftLeg.position.x = -0.25 - age * 0.72;
-            primaryRig.userData.rightLeg.position.x = 0.25 + age * 0.72;
-            primaryRig.position.x += direction * age * 3.5;
-            primaryRig.position.y += arc * 3.25 + age * 0.5;
-            primaryRig.rotation.x += age * 7.2; primaryRig.rotation.z += direction * age * 3.4;
-          } else {
-            const arc = Math.sin(Math.min(1, age / 1.12) * Math.PI);
+            primaryRig.userData.leftLeg.rotation.set(1.1 + age * 9.2, age * 4.2, 1.45 + age * 2.3);
+            primaryRig.userData.rightLeg.rotation.set(-1.1 - age * 9.2, -age * 4.2, -1.45 - age * 2.3);
+            primaryRig.userData.leftLeg.position.set(-0.25 - age * 2.8, 1.45 - age * 7.2, age * 0.7);
+            primaryRig.userData.rightLeg.position.set(0.25 + age * 2.8, 1.45 - age * 7.2, -age * 0.7);
             primaryRig.position.x += direction * age * 4.6;
-            primaryRig.position.y += arc * 3.7 + age * 0.75;
-            primaryRig.position.z -= age * 4.2;
-            primaryRig.rotation.x += age * 5.4; primaryRig.rotation.z += direction * age * 7.6;
+            primaryRig.position.y += age * 10.4 + age * age * 2.2;
+            primaryRig.rotation.x += age * 8.4; primaryRig.rotation.z += direction * age * 4.8;
+          } else {
+            primaryRig.position.x += direction * age * 5.8;
+            primaryRig.position.y += age * 12.2 + age * age * 2.4;
+            primaryRig.position.z -= age * 5.6;
+            primaryRig.rotation.x += age * 6.8; primaryRig.rotation.z += direction * age * 8.8;
           }
         }
       }
-      updateRoleLabels(object, target.z);
+      updateRoleLabels(object, target.z, !target.hitMode);
     }
 
     const hitTargets = frame.targets.filter((target) => target.hitMode && target.hitAge !== undefined);
@@ -713,7 +715,7 @@ export class OfficeRunner3D {
     for (const pursuer of frame.pursuers) {
       let object = this.pursuerMeshes.get(pursuer.id);
       if (!object) {
-        object = createPerson(Number.parseInt(pursuer.color.slice(1), 16), Number.parseInt(pursuer.suit.slice(1), 16), true, pursuer.role);
+        object = createPerson(Number.parseInt(pursuer.color.slice(1), 16), Number.parseInt(pursuer.suit.slice(1), 16), true, "");
         object.scale.setScalar(0.98);
         object.rotation.y = 0;
         object.userData.seed = pursuer.seed;
