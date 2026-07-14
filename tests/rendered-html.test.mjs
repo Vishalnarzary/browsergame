@@ -101,6 +101,10 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   assert.match(game, /chatterCursor < game\.chatterLines\.length/);
   assert.match(game, /game\.nextChatterDisplayAt = game\.elapsed \+ 5/);
   assert.match(game, /for \(const target of game\.targets\) target\.message = undefined/);
+  assert.match(game, /activeChatterText/);
+  assert.match(game, /chatterCaption/);
+  assert.match(game, /office-caption/);
+  assert.match(game, /Math\.abs\(a\.z \+ 46\)/);
   assert.doesNotMatch(game, /chatterCursor\+\+ % game\.chatterLines\.length/);
   assert.match(game, /\/audio\/running\.mp3/);
   assert.match(game, /running\.loop = true/);

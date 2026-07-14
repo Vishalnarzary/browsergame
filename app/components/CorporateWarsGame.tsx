@@ -119,6 +119,7 @@ type GameData = {
   chatterBatchPending: boolean;
   chatterCursor: number;
   nextChatterDisplayAt: number;
+  activeChatterText: string;
   runToken: number;
   runStyle: RunStyle;
   comboMilestones: number[];
@@ -212,7 +213,7 @@ const defaultHud = {
   contractProgress: 0, contractTarget: CONTRACTS[0].target, contractDone: false, selectedLane: 1, firstHit: false,
   speedFactor: 1, jumping: false,
   activePowerups: [] as { kind: PowerupKind; remaining: number }[], powerupsQueued: 0, aiPlanning: false,
-  pbDelta: 0,
+  pbDelta: 0, chatterCaption: "",
 };
 
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)); }
@@ -247,7 +248,7 @@ function makeGame(challengeIndex = 0, runStyle: RunStyle = "planner"): GameData 
     speedControl: 0, speedFactor: 1, jumpStartedAt: -10, jumpUntil: -10, jumpCooldownUntil: 0, hitStopUntil: 0,
     scheduledPowerups: [], mapPowerups: [], activePowerups: [], powerStrikes: [], nextPowerupBatchAt: 0,
     powerupBatchPending: false, powerupId: 0, strikeId: 0, nextLaserAt: 0, nextKickAt: 0, lastPowerSoundAt: -10, recentPowerupKinds: [],
-    chatterLines: [], recentChatter: [], nextChatterBatchAt: 0, chatterBatchPending: false, chatterCursor: 0, nextChatterDisplayAt: 0, runToken: Math.random(),
+    chatterLines: [], recentChatter: [], nextChatterBatchAt: 0, chatterBatchPending: false, chatterCursor: 0, nextChatterDisplayAt: 0, activeChatterText: "", runToken: Math.random(),
     runStyle, comboMilestones: [],
   };
 }
@@ -522,6 +523,7 @@ export default function CorporateWarsGame() {
     game.chatterBatchPending = false;
     if (!batch) { game.chatterLines = []; return; }
     game.chatterLines.push(...batch.sentences.filter((line) => line.kind === "motivation"), ...batch.sentences.filter((line) => line.kind === "office"));
+    if (!game.activeChatterText) game.nextChatterDisplayAt = game.elapsed;
     const nextHistory = [...history, ...batch.sentences.map((line) => line.text)];
     chatterHistoryRef.current = nextHistory;
     game.recentChatter = nextHistory.slice(-300);
@@ -768,14 +770,19 @@ export default function CorporateWarsGame() {
           } else if (target.z > -18) target.cleanLine = false;
         }
 
-        if (game.elapsed >= game.nextChatterDisplayAt && game.chatterCursor < game.chatterLines.length) {
+        if (game.elapsed >= game.nextChatterDisplayAt) {
           for (const target of game.targets) target.message = undefined;
-          const speaker = game.targets
-            .filter((target) => !target.resolved && target.z > -66 && target.z < -12)
-            .sort((a, b) => b.z - a.z)[0];
-          if (speaker) {
-            speaker.message = game.chatterLines[game.chatterCursor++].text;
+          game.activeChatterText = "";
+          if (game.chatterCursor < game.chatterLines.length) {
+            const line = game.chatterLines[game.chatterCursor++];
+            const speaker = game.targets
+              .filter((target) => !target.resolved && target.z > -78 && target.z < -10)
+              .sort((a, b) => Math.abs(a.z + 46) - Math.abs(b.z + 46))[0];
+            if (speaker) speaker.message = line.text;
+            game.activeChatterText = line.text;
             game.nextChatterDisplayAt = game.elapsed + 5;
+          } else {
+            game.nextChatterDisplayAt = game.elapsed + 0.25;
           }
         }
 
@@ -900,7 +907,7 @@ export default function CorporateWarsGame() {
         const elapsedSeconds = Math.floor(game.elapsed);
         if (game.elapsed - game.lastHud >= 0.08) {
           game.lastHud = game.elapsed;
-          setHud({ score: game.score, combo: game.combo, suspicion: Math.min(100, game.suspicion), time: elapsedSeconds, distance: Math.round(game.runDistance), focus: game.focus, flow, backHits: game.backHits, sideHits: game.sideHits, pursuers: game.pursuers.length, baits: game.chaserBaits, contractLabel: contract.label, contractProgress: Math.min(contract.target, progress), contractTarget: contract.target, contractDone: game.challengeDone, selectedLane: game.selectedLane, firstHit: game.firstHit, speedFactor: game.speedFactor, jumping: jumpProgress > 0, activePowerups: game.activePowerups.map((powerup) => ({ kind: powerup.kind, remaining: Math.max(0, Math.ceil(powerup.endsAt - game.elapsed)) })), powerupsQueued: game.scheduledPowerups.length + game.mapPowerups.length, aiPlanning: game.powerupBatchPending, pbDelta: game.score - best });
+          setHud({ score: game.score, combo: game.combo, suspicion: Math.min(100, game.suspicion), time: elapsedSeconds, distance: Math.round(game.runDistance), focus: game.focus, flow, backHits: game.backHits, sideHits: game.sideHits, pursuers: game.pursuers.length, baits: game.chaserBaits, contractLabel: contract.label, contractProgress: Math.min(contract.target, progress), contractTarget: contract.target, contractDone: game.challengeDone, selectedLane: game.selectedLane, firstHit: game.firstHit, speedFactor: game.speedFactor, jumping: jumpProgress > 0, activePowerups: game.activePowerups.map((powerup) => ({ kind: powerup.kind, remaining: Math.max(0, Math.ceil(powerup.endsAt - game.elapsed)) })), powerupsQueued: game.scheduledPowerups.length + game.mapPowerups.length, aiPlanning: game.powerupBatchPending, pbDelta: game.score - best, chatterCaption: game.activeChatterText });
         }
         if (game.suspicion >= 100) finishGame();
       }
@@ -957,6 +964,7 @@ export default function CorporateWarsGame() {
           <span className="powerup-planner">AI DROP {hud.aiPlanning ? "PLANNING" : `${hud.powerupsQueued} QUEUED`}</span>
           <div>{hud.activePowerups.length ? hud.activePowerups.map((powerup) => <b key={powerup.kind} className={`power-${powerup.kind}`}>{POWERUP_LABELS[powerup.kind]} <i>{powerup.remaining}s</i></b>) : <em>Collect a glowing prototype</em>}</div>
         </div>
+        {hud.chatterCaption && <div key={hud.chatterCaption} className="office-caption" role="status"><span>OFFICE CHATTER</span><b>{hud.chatterCaption}</b></div>}
         {feedback && <div className={`skill-feedback ${feedback.kind}`}>{feedback.text}</div>}
         {!hud.firstHit && <div className="first-prompt"><kbd>← →</kbd> line up while they are far away <span>· late cuts cause a chase</span></div>}
         <div className="lane-hints" aria-hidden="true">{[1, 2, 3].map((number) => <span key={number} className={hud.selectedLane === number - 1 ? "active" : ""}>{number}</span>)}</div>
