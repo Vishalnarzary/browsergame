@@ -7,8 +7,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") || requestHeaders.get("host") || "localhost:3000";
   const protocol = requestHeaders.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "Corporate Wars — Clock In. Slap Out.";
-  const description = "A fast office runner where smart lane choices trigger automatic slaps, build combos, complete contracts, and climb a persistent career ladder.";
+  const title = "Corporate Wars — Run Smart. Slap Clean.";
+  const description = "A real 3D office runner where long-view lane planning earns clean back hits, risky side hits create pursuers, and mail carts become tactical traps.";
   return {
     title,
     description,

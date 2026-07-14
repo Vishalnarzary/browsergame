@@ -213,6 +213,46 @@ button:focus-visible { outline: 3px solid var(--mint); outline-offset: 4px; }
 .contract-strip.done { border-color: rgba(111,255,211,.42); border-left-color: var(--mint); }
 .contract-strip.done span, .contract-strip.done > i { color: var(--mint); }
 
+.pursuit-card {
+  position: absolute;
+  z-index: 14;
+  top: 178px;
+  left: 18px;
+  width: min(290px, 31vw);
+  padding: 9px 12px;
+  border: 1px solid rgba(111,255,211,.2);
+  border-left: 4px solid var(--mint);
+  border-radius: 8px;
+  background: rgba(6,15,23,.78);
+  pointer-events: none;
+}
+.pursuit-card span { display: block; color: rgba(111,255,211,.72); font-size: 7px; font-weight: 900; letter-spacing: .2em; }
+.pursuit-card b { position: absolute; top: 8px; right: 11px; color: var(--mint); font: 900 18px "Arial Black", sans-serif; }
+.pursuit-card small { display: block; margin-top: 3px; color: rgba(231,244,239,.56); font-size: 8px; font-weight: 800; letter-spacing: .04em; }
+.pursuit-card.hot { border-color: rgba(255,61,97,.48); border-left-color: var(--danger); box-shadow: 0 0 28px rgba(255,61,97,.13); }
+.pursuit-card.hot span, .pursuit-card.hot b { color: #ff6b85; }
+
+.skill-feedback {
+  position: absolute;
+  z-index: 17;
+  left: 50%;
+  top: 31%;
+  padding: 10px 18px;
+  transform: translateX(-50%) rotate(-1deg);
+  border: 1px solid rgba(255,255,255,.32);
+  border-radius: 7px;
+  background: rgba(4,12,19,.9);
+  box-shadow: 0 14px 44px rgba(0,0,0,.45);
+  color: #fff;
+  font: 900 clamp(12px, 1.5vw, 18px) "Arial Black", sans-serif;
+  letter-spacing: .035em;
+  pointer-events: none;
+  animation: skillHit .92s cubic-bezier(.2,.85,.2,1) both;
+}
+.skill-feedback.clean { color: var(--mint); border-color: rgba(111,255,211,.55); }
+.skill-feedback.risk { color: var(--yellow); border-color: rgba(255,215,94,.55); }
+.skill-feedback.danger { color: #ff758d; border-color: rgba(255,61,97,.62); }
+
 .first-prompt {
   position: absolute;
   z-index: 13;
@@ -355,6 +395,13 @@ kbd {
 .role-row.manager > b { background: #ff8b61; }
 .role-row.risky > b { background: #ff5370; }
 .role-row.ceo > b { background: #c998ff; }
+.strategy-row { display: grid; grid-template-columns: 48px 1fr; gap: 13px; align-items: start; padding: 12px 0; border-top: 1px solid rgba(16,33,42,.15); }
+.strategy-row > b { display: grid; place-items: center; width: 39px; height: 39px; border: 2px solid #10212a; border-radius: 50%; color: #10212a; font: 900 11px "Arial Black", sans-serif; }
+.strategy-row.clean > b { background: #6fffd3; }
+.strategy-row.risk > b { background: #ff8b61; }
+.strategy-row.trap > b { background: #ffd75e; }
+.strategy-row strong { display: block; margin-bottom: 3px; font-size: 9px; letter-spacing: .1em; }
+.strategy-row span { display: block; color: rgba(16,33,42,.68); font-size: 10px; line-height: 1.38; }
 .best-score { display: flex; justify-content: space-between; align-items: end; margin-top: 19px; padding-top: 17px; border-top: 3px solid #10212a; }
 .best-score span { font-size: 9px; font-weight: 900; letter-spacing: .18em; }
 .best-score strong { font: 900 28px "Arial Black", sans-serif; letter-spacing: -.05em; }
@@ -396,6 +443,7 @@ kbd {
 @keyframes timerPulse { to { transform: scale(1.045); } }
 @keyframes promptFloat { to { transform: translate(-50%, -6px); } }
 @keyframes flowPulse { to { transform: scaleX(1.035); filter: brightness(1.35); } }
+@keyframes skillHit { 0% { opacity: 0; transform: translate(-50%, 18px) scale(.72) rotate(-3deg); } 22% { opacity: 1; transform: translate(-50%, 0) scale(1.08) rotate(1deg); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -18px) scale(.98) rotate(-1deg); } }
 
 @media (max-width: 900px) {
   .game-shell { padding: 0; min-height: 100svh; }
@@ -416,6 +464,7 @@ kbd {
   .suspicion-card { min-width: 0; }
   .suspicion-card small { display: none; }
   .event-toast { top: 87px; }
+  .pursuit-card { top: 171px; }
   .game-footer { display: none; }
 }
 
@@ -428,6 +477,8 @@ kbd {
   .suspicion-card { grid-column: 2; grid-row: 2; }
   .event-toast { top: 125px; }
   .contract-strip { top: 128px; left: 10px; width: 205px; }
+  .pursuit-card { top: 184px; left: 10px; width: 205px; }
+  .pursuit-card small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .first-prompt span { display: none; }
   .game-actions { bottom: 56px; right: 10px; flex-direction: column; }
   .lane-hints { bottom: 17px; }

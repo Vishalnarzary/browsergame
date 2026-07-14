@@ -1,8 +1,8 @@
 # Corporate Wars
 
-A complete browser arcade game with a perspective-rendered office, three click/keyboard lanes, escalating targets, combo scoring, suspicion, procedural sound, local high scores, novelty events, and a 100-second start-to-retry loop.
+A complete WebGL 3D browser arcade game with a long-view office corridor, three click/keyboard lanes, escalating targets, combo scoring, suspicion, procedural sound, local high scores, novelty events, and a 100-second start-to-retry loop.
 
-The current run-and-slap design automatically slaps locked targets and adds route grades, a Focus meter and score-doubling Flow State, mail-cart obstacles, espresso pickups, escalating formation waves, rotating contracts, badges, and persistent career ranks.
+The player is the only automatic runner. Employees work at desks, talk in groups, use phones, and present around the office—without floating role labels. Line up early to approach from behind for a clean hit. A late side hit creates a pursuing employee who follows your lane; change lanes late to bait that pursuer into a mail cart. The game also includes Focus, score-doubling Flow State, espresso pickups, formation waves, rotating contracts, badges, and persistent career ranks.
 
 ## Play locally
 
@@ -21,9 +21,11 @@ The secret is read only by `app/api/novelty-event/route.ts`. It is never sent to
 
 ## Controls
 
-- The employee runs forward automatically.
+- The hero runs forward and slaps automatically.
 - Click a lane, or press `1`–`3`, to move into it.
-- Use `←` / `→` to switch lanes. Slaps happen automatically when a locked target reaches range.
+- Use `←` / `→` or `A` / `D` to switch lanes.
+- Choose a target lane while it is far away for a clean back hit. Cutting in late causes a side hit and starts a chase.
+- Pursuers change lanes more slowly than the hero. Leave a mail cart in their lane to score a tactical bait.
 - Press `Esc` to pause or resume.
 - Press `Enter` to start or replay.
 

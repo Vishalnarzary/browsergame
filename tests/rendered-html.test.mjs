@@ -8,9 +8,7 @@ async function loadWorker() {
   return (await import(workerUrl.href)).default;
 }
 
-const env = {
-  ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
-};
+const env = { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } };
 const context = { waitUntil() {}, passThroughOnException() {} };
 
 test("server-renders the finished game shell", async () => {
@@ -19,16 +17,18 @@ test("server-renders the finished game shell", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>Corporate Wars — Clock In\. Slap Out\.<\/title>/i);
+  assert.match(html, /<title>Corporate Wars — Run Smart\. Slap Clean\.<\/title>/i);
   assert.match(html, /CORPORATE/);
   assert.match(html, /START RUNNING/);
   assert.match(html, /PERSONAL BEST/);
+  assert.match(html, /REAL 3D OFFICE RUNNER/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
-test("ships the full loop and keeps the Groq key server-side", async () => {
-  const [game, route, envExample] = await Promise.all([
+test("ships the strategic 3D loop and keeps the Groq key server-side", async () => {
+  const [game, scene, route, envExample] = await Promise.all([
     readFile(new URL("../app/components/CorporateWarsGame.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/OfficeRunner3D.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/novelty-event/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../.env.example", import.meta.url), "utf8"),
   ]);
@@ -41,16 +41,22 @@ test("ships the full loop and keeps the Groq key server-side", async () => {
   assert.match(game, /runDistance/);
   assert.match(game, /AUTO-RUN/);
   assert.match(game, /FLOW STATE/);
-  assert.match(game, /PERFECT/);
+  assert.match(game, /CLEAN BACK HIT/);
   assert.match(game, /"cart" \| "coffee"/);
   assert.match(game, /DEADLINE DASH/);
-  assert.match(game, /const autoSlap/);
+  assert.match(game, /const resolveSlap/);
   assert.match(game, /corporate-wars-career/);
   assert.match(game, /CONTRACTS/);
   assert.match(game, /RANKS/);
-  assert.match(game, /"walking" \| "desk" \| "chatting" \| "phone"/);
+  assert.match(game, /SIDE HIT — PURSUER JOINED/);
+  assert.match(game, /PURSUER BAITED INTO CART/);
+  assert.match(game, /CLEAN_COMMIT_Z/);
   assert.match(game, /Digit/);
   assert.match(game, /ArrowLeft/);
+  assert.match(scene, /"desk" \| "chatting" \| "phone" \| "presenting"/);
+  assert.match(scene, /new THREE\.WebGLRenderer/);
+  assert.match(scene, /new THREE\.PerspectiveCamera/);
+  assert.match(scene, /animateRig/);
   assert.match(route, /process\.env\.GROQ_API_KEY/);
   assert.match(route, /openai\/gpt-oss-20b/);
   assert.doesNotMatch(game, /GROQ_API_KEY|NEXT_PUBLIC/);
