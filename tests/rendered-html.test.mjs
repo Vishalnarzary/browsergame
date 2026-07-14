@@ -91,9 +91,13 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   assert.match(game, /fetchChatterBatch/);
   assert.match(game, /CHATTER_INTERVAL_SECONDS = 30/);
   assert.match(game, /nextChatterBatchAt \+= CHATTER_INTERVAL_SECONDS/);
+  assert.match(game, /nextChatterBatchAt: 0/);
+  assert.match(game, /candidate\.sentences\.length === 7/);
   assert.match(game, /FALLBACK_CHATTER_BATCHES/);
   assert.match(game, /CHATTER_HISTORY_KEY/);
   assert.match(game, /chatterCursor < game\.chatterLines\.length/);
+  assert.match(game, /game\.nextChatterDisplayAt = game\.elapsed \+ 5/);
+  assert.match(game, /for \(const target of game\.targets\) target\.message = undefined/);
   assert.doesNotMatch(game, /chatterCursor\+\+ % game\.chatterLines\.length/);
   assert.match(game, /\/audio\/running\.mp3/);
   assert.match(game, /running\.loop = true/);
@@ -141,8 +145,9 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   assert.match(chatterRoute, /gemini-2\.5-flash/);
   assert.match(chatterRoute, /generativelanguage\.googleapis\.com/);
   assert.match(chatterRoute, /x-goog-api-key/);
-  assert.match(chatterRoute, /minItems: 3/);
-  assert.match(chatterRoute, /maxItems: 5/);
+  assert.match(chatterRoute, /minItems: 7/);
+  assert.match(chatterRoute, /maxItems: 7/);
+  assert.match(chatterRoute, /sentences\.length !== 7/);
   assert.match(chatterRoute, /"motivation"/);
   assert.match(chatterRoute, /responseMimeType: "application\/json"/);
   assert.match(chatterRoute, /responseJsonSchema/);

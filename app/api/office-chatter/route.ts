@@ -11,7 +11,7 @@ function normalizeLine(text: string) {
 function cleanBatch(value: unknown, recentLines: string[]): ChatterBatch | null {
   if (!value || typeof value !== "object") return null;
   const batch = value as ChatterBatch;
-  if (!Array.isArray(batch.sentences) || batch.sentences.length < 3 || batch.sentences.length > 5) return null;
+  if (!Array.isArray(batch.sentences) || batch.sentences.length !== 7) return null;
   const seen = new Set(recentLines.map(normalizeLine));
   const sentences = batch.sentences.map((line) => {
     if (!line || typeof line.text !== "string" || !KINDS.has(line.kind)) return null;
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
             role: "user",
             parts: [
               {
-                text: `You write short, funny, recognizable office dialogue for a PG arcade game. Return 3 to 5 completely new, distinct sentences. Make the office lines genuinely playful, with light jokes about deadlines, meetings, spreadsheets, printers, coffee, inboxes, or corporate buzzwords. Each office line should contain a small punchline or amusing twist without becoming mean. At least one line must be an encouraging motivational quote about persistence, confidence, or doing great work; it may also be gently funny. Keep every line natural, standalone, under 90 characters, and avoid insults, threats, or sensitive topics. Never copy, lightly rewrite, or reuse the premise of anything in recentLines. Context: ${JSON.stringify(context)}`,
+                text: `You write short, funny, recognizable office dialogue for a PG arcade game. Return exactly 7 completely new, distinct sentences. Make the office lines genuinely playful, with light jokes about deadlines, meetings, spreadsheets, printers, coffee, inboxes, or corporate buzzwords. Each office line should contain a small punchline or amusing twist without becoming mean. At least one line must be an encouraging motivational quote about persistence, confidence, or doing great work; it may also be gently funny. Keep every line natural, standalone, under 90 characters, and avoid insults, threats, or sensitive topics. Never copy, lightly rewrite, or reuse the premise of anything in recentLines. Context: ${JSON.stringify(context)}`,
               },
             ],
           },
@@ -72,8 +72,8 @@ export async function POST(request: Request) {
             properties: {
               sentences: {
                 type: "array",
-                minItems: 3,
-                maxItems: 5,
+                minItems: 7,
+                maxItems: 7,
                 items: {
                   type: "object",
                   additionalProperties: false,

@@ -118,6 +118,7 @@ type GameData = {
   nextChatterBatchAt: number;
   chatterBatchPending: boolean;
   chatterCursor: number;
+  nextChatterDisplayAt: number;
   runToken: number;
   runStyle: RunStyle;
   comboMilestones: number[];
@@ -247,7 +248,7 @@ function makeGame(challengeIndex = 0, runStyle: RunStyle = "planner"): GameData 
     speedControl: 0, speedFactor: 1, jumpStartedAt: -10, jumpUntil: -10, jumpCooldownUntil: 0, hitStopUntil: 0,
     scheduledPowerups: [], mapPowerups: [], activePowerups: [], powerStrikes: [], nextPowerupBatchAt: 0,
     powerupBatchPending: false, powerupId: 0, strikeId: 0, nextLaserAt: 0, nextKickAt: 0, lastPowerSoundAt: -10, recentPowerupKinds: [],
-    chatterLines: [], recentChatter: [], nextChatterBatchAt: 0, chatterBatchPending: false, chatterCursor: 0, runToken: Math.random(),
+    chatterLines: [], recentChatter: [], nextChatterBatchAt: 0, chatterBatchPending: false, chatterCursor: 0, nextChatterDisplayAt: 0, runToken: Math.random(),
     runStyle, comboMilestones: [],
   };
 }
@@ -499,7 +500,7 @@ export default function CorporateWarsGame() {
       if (!response.ok) throw new Error("fallback");
       const candidate = await response.json() as ChatterBatch;
       const seen = new Set(history.map(normalizeChatter));
-      const valid = Array.isArray(candidate.sentences) && candidate.sentences.length >= 3 && candidate.sentences.length <= 5
+      const valid = Array.isArray(candidate.sentences) && candidate.sentences.length === 7
         && candidate.sentences.every((line) => typeof line.text === "string" && line.text.length >= 8 && line.text.length <= 90 && (line.kind === "office" || line.kind === "motivation"))
         && candidate.sentences.some((line) => line.kind === "motivation")
         && candidate.sentences.every((line) => { const normalized = normalizeChatter(line.text); if (!normalized || seen.has(normalized)) return false; seen.add(normalized); return true; });
@@ -512,8 +513,8 @@ export default function CorporateWarsGame() {
       const office = pool.filter((line) => line.kind === "office");
       const offset = office.length ? Math.floor(batchStart / CHATTER_INTERVAL_SECONDS) % office.length : 0;
       const rotated = [...office.slice(offset), ...office.slice(0, offset)];
-      const fresh = motivation ? [motivation, ...rotated.slice(0, 4)] : [];
-      batch = fresh.length >= 3 ? { sentences: fresh } : null;
+      const fresh = motivation ? [motivation, ...rotated.filter((line) => line.text !== motivation.text).slice(0, 6)] : [];
+      batch = fresh.length === 7 ? { sentences: fresh } : null;
     } finally {
       clearTimeout(timeout);
     }
@@ -521,8 +522,7 @@ export default function CorporateWarsGame() {
     if (game.runToken !== runToken) return;
     game.chatterBatchPending = false;
     if (!batch) { game.chatterLines = []; return; }
-    game.chatterLines = [...batch.sentences.filter((line) => line.kind === "motivation"), ...batch.sentences.filter((line) => line.kind === "office")];
-    game.chatterCursor = 0;
+    game.chatterLines.push(...batch.sentences.filter((line) => line.kind === "motivation"), ...batch.sentences.filter((line) => line.kind === "office"));
     const nextHistory = [...history, ...batch.sentences.map((line) => line.text)];
     chatterHistoryRef.current = nextHistory;
     game.recentChatter = nextHistory.slice(-300);
@@ -532,13 +532,10 @@ export default function CorporateWarsGame() {
   const spawnTarget = useCallback((lane?: number, z?: number, forcedType?: TargetType, activity?: OfficeActivity) => {
     const game = gameRef.current;
     const targetLane = lane ?? Math.floor(Math.random() * 3);
-    const showChatter = game.chatterCursor < game.chatterLines.length && Math.random() < 0.5;
-    const chatter = showChatter ? game.chatterLines[game.chatterCursor++] : undefined;
     game.targets.push({
       id: ++game.targetId, lane: targetLane, type: forcedType ?? chooseType(game.elapsed, game.activeEvent),
       z: z ?? -78 - Math.random() * 24, seed: Math.random() * 9, activity: activity ?? randomActivity(),
       cleanLine: game.selectedLane === targetLane, alignedAtZ: game.selectedLane === targetLane ? (z ?? -78) : undefined,
-      message: chatter?.text,
       resolved: false,
     });
   }, []);
@@ -770,6 +767,17 @@ export default function CorporateWarsGame() {
             if (target.alignedAtZ === undefined) target.alignedAtZ = target.z;
             if (target.z <= (game.runStyle === "planner" ? CLEAN_COMMIT_Z + 7 : CLEAN_COMMIT_Z)) target.cleanLine = true;
           } else if (target.z > -18) target.cleanLine = false;
+        }
+
+        if (game.elapsed >= game.nextChatterDisplayAt && game.chatterCursor < game.chatterLines.length) {
+          for (const target of game.targets) target.message = undefined;
+          const speaker = game.targets
+            .filter((target) => !target.resolved && target.z > -66 && target.z < -12)
+            .sort((a, b) => b.z - a.z)[0];
+          if (speaker) {
+            speaker.message = game.chatterLines[game.chatterCursor++].text;
+            game.nextChatterDisplayAt = game.elapsed + 5;
+          }
         }
 
         for (const item of game.items) if (!item.resolved) item.z += speed * dt;
