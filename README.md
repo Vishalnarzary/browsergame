@@ -1,8 +1,10 @@
 # Corporate Wars
 
-A complete WebGL 3D browser arcade game with a long-view office corridor, three click/keyboard lanes, escalating targets, combo scoring, suspicion, procedural sound, local high scores, novelty events, and a 100-second start-to-retry loop.
+A complete WebGL 3D browser arcade game with a long-view office corridor, three click/keyboard lanes, escalating targets, combo scoring, suspicion, procedural sound, local high scores, novelty events, and an endless run that continues until suspicion reaches 100%.
 
 The player is the only automatic runner. Rounded human characters have faces, hands, hair, and layered clothing, while large high-contrast overhead labels identify each employee from the long camera view. Every employee appears alone, working at a desk, using a phone, presenting, or gesturing. Line up early to approach from behind for a clean hit. A late side hit creates a pursuing employee with a glowing red, steaming head; sprinting opens a safe gap, while braking lets the chase close in. Change lanes late to bait a pursuer into a mail cart. The game also includes Focus, score-doubling Flow State, espresso pickups, formation waves, rotating contracts, badges, and persistent career ranks.
+
+Generated speech bubbles update live on already-spawned 3D employees. When an employee is hit, their desk, chair, monitor, phone, presentation board, and other activity props disappear on the same impact frame instead of lingering behind the reaction animation.
 
 Replay progression is built around skill and player choice. Before each run, choose Route Planner for a wider clean-hit commitment window, Pace Setter for higher sprint speed, or Cart Trickster for stronger bait rewards. During the run, a live personal-best pace indicator and combo mastery milestones create clear improvement targets. Daily briefings reward two completed contracts with bonus XP but never punish missed days, while every three banked contracts awards a mastery bonus. The shift report grades the route and previews the next contract so every replay has a concrete goal.
 

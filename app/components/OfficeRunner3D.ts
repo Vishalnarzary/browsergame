@@ -143,7 +143,24 @@ function speechTexture(message: string) {
 function addSpeechBubble(group: THREE.Group, message?: string) {
   if (!message) return;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: speechTexture(message), transparent: true, depthTest: false, depthWrite: false }));
-  sprite.position.set(0, 5.25, 0); sprite.scale.set(6.2, 1.82, 1); sprite.renderOrder = 31; sprite.userData.speechBubble = true; group.add(sprite);
+  sprite.position.set(0, 5.25, 0); sprite.scale.set(6.2, 1.82, 1); sprite.renderOrder = 31; sprite.userData.speechBubble = true; sprite.userData.speechText = message; group.add(sprite);
+}
+
+function updateSpeechBubble(group: THREE.Group, message?: string) {
+  let current: THREE.Sprite | undefined;
+  group.traverse((object) => { if (object instanceof THREE.Sprite && object.userData.speechBubble) current = object; });
+  if (current?.userData.speechText === message) return;
+  if (current) {
+    const material = current.material as THREE.SpriteMaterial;
+    material.map?.dispose(); material.dispose(); current.parent?.remove(current);
+  }
+  addSpeechBubble(group, message);
+}
+
+function destroyEmployeeProps(group: THREE.Group) {
+  if (group.userData.propsDestroyed) return;
+  group.userData.propsDestroyed = true;
+  group.traverse((object) => { if (object.userData.employeeProp) object.visible = false; });
 }
 
 function createPerson(bodyColor: number, accentColor: number, runner = false, roleLabel = ""): Rig {
@@ -230,18 +247,22 @@ function createDeskScene(person: Rig) {
   const wood = new THREE.MeshStandardMaterial({ color: 0x845b42, roughness: 0.75 });
   const chairMat = new THREE.MeshStandardMaterial({ color: 0x25394b, roughness: 0.8 });
   const desk = mesh(new THREE.BoxGeometry(2.45, 0.16, 1), wood);
+  desk.userData.employeeProp = true;
   desk.position.set(0, 1.18, -0.55);
   group.add(desk);
   for (const x of [-0.94, 0.94]) {
     const leg = mesh(new THREE.BoxGeometry(0.12, 1.1, 0.12), wood);
+    leg.userData.employeeProp = true;
     leg.position.set(x, 0.58, -0.55);
     group.add(leg);
   }
   const screen = mesh(new THREE.BoxGeometry(0.88, 0.62, 0.08), new THREE.MeshStandardMaterial({ color: 0x9fffe3, emissive: 0x174d43, emissiveIntensity: 0.7 }));
+  screen.userData.employeeProp = true;
   screen.position.set(0, 1.67, -0.47);
   screen.rotation.x = -0.08;
   group.add(screen);
   const chair = mesh(new THREE.BoxGeometry(0.9, 1.1, 0.16), chairMat);
+  chair.userData.employeeProp = true;
   chair.position.set(0, 0.92, 0.48);
   group.add(chair);
   person.position.set(0, 0.46, 0.28);
@@ -269,6 +290,7 @@ function createActivityScene(activity: OfficeActivity, bodyColor: number, suitCo
     primary.rotation.y = 0;
   } else if (activity === "phone") {
     const phone = mesh(new THREE.BoxGeometry(0.16, 0.32, 0.06), new THREE.MeshStandardMaterial({ color: 0x05090e }));
+    phone.userData.employeeProp = true;
     phone.position.set(0.46, 2.72, -0.22);
     phone.rotation.z = -0.25;
     group.add(phone);
@@ -278,8 +300,10 @@ function createActivityScene(activity: OfficeActivity, bodyColor: number, suitCo
     primary.position.x = 0.75;
     primary.rotation.y = -0.36;
     const board = mesh(new THREE.BoxGeometry(2.2, 1.45, 0.12), new THREE.MeshStandardMaterial({ color: 0xe6f3ed, roughness: 0.75 }));
+    board.userData.employeeProp = true;
     board.position.set(-0.78, 2.05, -0.6);
     const chart = mesh(new THREE.BoxGeometry(1.38, 0.12, 0.04), new THREE.MeshStandardMaterial({ color: 0xff6f61, emissive: 0x4b1414, emissiveIntensity: 0.25 }));
+    chart.userData.employeeProp = true;
     chart.position.set(-0.78, 2.12, -0.67);
     chart.rotation.z = -0.2;
     primary.userData.leftArm.rotation.z = 0.85;
@@ -659,6 +683,7 @@ export class OfficeRunner3D {
     for (const target of frame.targets) {
       let object = this.targetMeshes.get(target.id);
       if (!object) { object = this.makeTarget(target); this.targetMeshes.set(target.id, object); this.scene.add(object); }
+      updateSpeechBubble(object, target.hitMode ? undefined : target.message);
       object.position.set(LANES[target.lane], 0, target.z);
       let primaryRig: Rig | undefined;
       walkRigs(object, (rig) => {
@@ -666,6 +691,7 @@ export class OfficeRunner3D {
         if (rig.userData.isPrimaryTarget) primaryRig = rig;
       });
       if (target.hitMode) {
+        destroyEmployeeProps(object);
         const age = target.hitAge ?? 0;
         const direction = target.hitMode === "side" ? 1 : -1;
         if (primaryRig) {

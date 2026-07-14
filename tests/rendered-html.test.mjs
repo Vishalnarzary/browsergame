@@ -34,7 +34,10 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
     readFile(new URL("../app/api/office-chatter/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../.env.example", import.meta.url), "utf8"),
   ]);
-  assert.match(game, /const RUN_SECONDS = 100/);
+  assert.doesNotMatch(game, /RUN_SECONDS/);
+  assert.match(game, /ENDLESS SHIFT/);
+  assert.match(game, /if \(game\.suspicion >= 100\) finishGame\(\)/);
+  assert.doesNotMatch(game, /remaining <= 0/);
   assert.match(game, /type RunStyle = "planner" \| "sprinter" \| "trickster"/);
   assert.match(game, /DAILY_CONTRACT_TARGET = 2/);
   assert.match(game, /DAILY_REWARD = 300/);
@@ -124,6 +127,10 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   assert.doesNotMatch(scene, /\bmateA\b/);
   assert.match(scene, /addSpeechBubble/);
   assert.match(scene, /speechTexture/);
+  assert.match(scene, /updateSpeechBubble/);
+  assert.match(scene, /speechText/);
+  assert.match(scene, /destroyEmployeeProps/);
+  assert.match(scene, /employeeProp/);
   assert.match(scene, /enragePursuer/);
   assert.match(scene, /animateAngerSteam/);
   assert.match(scene, /0xff3028/);

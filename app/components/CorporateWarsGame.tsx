@@ -124,7 +124,6 @@ type GameData = {
   comboMilestones: number[];
 };
 
-const RUN_SECONDS = 100;
 const SLAP_MIN = 0.68;
 const SLAP_DISTANCE = 2.35;
 const CLEAN_COMMIT_Z = -25;
@@ -208,7 +207,7 @@ const RANKS = [
 ];
 
 const defaultHud = {
-  score: 0, combo: 1, suspicion: 0, time: RUN_SECONDS, distance: 0, focus: 0, flow: false,
+  score: 0, combo: 1, suspicion: 0, time: 0, distance: 0, focus: 0, flow: false,
   backHits: 0, sideHits: 0, pursuers: 0, baits: 0, contractLabel: CONTRACTS[0].label,
   contractProgress: 0, contractTarget: CONTRACTS[0].target, contractDone: false, selectedLane: 1, firstHit: false,
   speedFactor: 1, jumping: false,
@@ -478,7 +477,7 @@ export default function CorporateWarsGame() {
 
     const game = gameRef.current;
     if (game.runToken !== runToken || !batch) return;
-    const usablePowerups = batch.powerups.filter((powerup) => minuteStart + powerup.spawn_offset_sec < RUN_SECONDS - 2);
+    const usablePowerups = batch.powerups;
     game.scheduledPowerups.push(...usablePowerups.map((powerup) => ({ ...powerup, id: ++game.powerupId, spawnAt: minuteStart + powerup.spawn_offset_sec })));
     game.recentPowerupKinds = [...game.recentPowerupKinds, ...usablePowerups.map((powerup) => powerup.kind)].slice(-8);
     game.powerupBatchPending = false;
@@ -898,13 +897,12 @@ export default function CorporateWarsGame() {
           showFeedback(`PURSUER OUTRUN  +${outrun.length * 75}`, "clean"); tone(430, 0.2, "triangle", 0.045, 240);
         }
         game.powerStrikes = game.powerStrikes.filter((strike) => game.elapsed - strike.bornAt < 0.52);
-        const remaining = Math.max(0, RUN_SECONDS - game.elapsed);
+        const elapsedSeconds = Math.floor(game.elapsed);
         if (game.elapsed - game.lastHud >= 0.08) {
           game.lastHud = game.elapsed;
-          const expectedBest = best > 0 ? Math.round(best * clamp(game.elapsed / RUN_SECONDS, 0, 1)) : 0;
-          setHud({ score: game.score, combo: game.combo, suspicion: Math.min(100, game.suspicion), time: Math.ceil(remaining), distance: Math.round(game.runDistance), focus: game.focus, flow, backHits: game.backHits, sideHits: game.sideHits, pursuers: game.pursuers.length, baits: game.chaserBaits, contractLabel: contract.label, contractProgress: Math.min(contract.target, progress), contractTarget: contract.target, contractDone: game.challengeDone, selectedLane: game.selectedLane, firstHit: game.firstHit, speedFactor: game.speedFactor, jumping: jumpProgress > 0, activePowerups: game.activePowerups.map((powerup) => ({ kind: powerup.kind, remaining: Math.max(0, Math.ceil(powerup.endsAt - game.elapsed)) })), powerupsQueued: game.scheduledPowerups.length + game.mapPowerups.length, aiPlanning: game.powerupBatchPending, pbDelta: game.score - expectedBest });
+          setHud({ score: game.score, combo: game.combo, suspicion: Math.min(100, game.suspicion), time: elapsedSeconds, distance: Math.round(game.runDistance), focus: game.focus, flow, backHits: game.backHits, sideHits: game.sideHits, pursuers: game.pursuers.length, baits: game.chaserBaits, contractLabel: contract.label, contractProgress: Math.min(contract.target, progress), contractTarget: contract.target, contractDone: game.challengeDone, selectedLane: game.selectedLane, firstHit: game.firstHit, speedFactor: game.speedFactor, jumping: jumpProgress > 0, activePowerups: game.activePowerups.map((powerup) => ({ kind: powerup.kind, remaining: Math.max(0, Math.ceil(powerup.endsAt - game.elapsed)) })), powerupsQueued: game.scheduledPowerups.length + game.mapPowerups.length, aiPlanning: game.powerupBatchPending, pbDelta: game.score - best });
         }
-        if (remaining <= 0 || game.suspicion >= 100) finishGame();
+        if (game.suspicion >= 100) finishGame();
       }
 
       const sceneFrame: SceneFrame = {
@@ -948,7 +946,7 @@ export default function CorporateWarsGame() {
       {(screen === "playing" || screen === "paused") && <>
         <section className="hud" aria-label="Game status">
           <div className="hud-card score-card"><span className="hud-label">PRODUCTIVITY</span><strong>{hud.score.toLocaleString()}</strong><span className="combo">×{hud.combo.toFixed(2)} COMBO · {hud.backHits} CLEAN</span>{best > 0 && <small className={hud.pbDelta >= 0 ? "pb-ahead" : "pb-behind"}>PB PACE {hud.pbDelta >= 0 ? "+" : ""}{hud.pbDelta.toLocaleString()}</small>}</div>
-          <div className={`timer-card ${hud.time <= 10 ? "timer-danger" : ""}`}><span>{hud.distance}M · {hud.speedFactor.toFixed(2)}× PACE</span><strong>{String(Math.floor(hud.time / 60)).padStart(2, "0")}:{String(hud.time % 60).padStart(2, "0")}</strong><div className={`focus-mini ${hud.flow ? "flowing" : ""}`}><i style={{ width: `${hud.flow ? 100 : hud.focus}%` }} /><b>{hud.flow ? "FLOW ×2" : "FOCUS"}</b></div></div>
+          <div className="timer-card"><span>ENDLESS SHIFT · {hud.distance}M · {hud.speedFactor.toFixed(2)}×</span><strong>{String(Math.floor(hud.time / 60)).padStart(2, "0")}:{String(hud.time % 60).padStart(2, "0")}</strong><div className={`focus-mini ${hud.flow ? "flowing" : ""}`}><i style={{ width: `${hud.flow ? 100 : hud.focus}%` }} /><b>{hud.flow ? "FLOW ×2" : "FOCUS"}</b></div></div>
           <div className="hud-card suspicion-card"><div className="suspicion-head"><span className="hud-label">SUSPICION</span><b>{Math.round(hud.suspicion)}%</b></div><div className="meter"><i style={{ width: `${hud.suspicion}%` }} /></div><small>{hud.pursuers ? `${hud.pursuers} PURSUER${hud.pursuers > 1 ? "S" : ""} CLOSING` : hud.suspicion > 45 ? "KEEP IT CASUAL" : "ROUTE IS CLEAN"}</small></div>
         </section>
         <div className={`event-toast ${toastVisible ? "show" : ""} rarity-${toast?.rarity || "common"}`} role="status"><span className="event-kicker">OFFICE UPDATE</span><b>{toast?.flavor_text}</b>{toast && <span className="event-duration">{toast.duration_sec}s</span>}</div>
