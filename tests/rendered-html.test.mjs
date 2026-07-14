@@ -134,6 +134,11 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   assert.match(scene, /speechTexture/);
   assert.match(scene, /updateSpeechBubble/);
   assert.match(scene, /speechText/);
+  assert.match(scene, /SPEECH_BUBBLE_WIDTH = 9\.6/);
+  assert.match(scene, /SPEECH_BUBBLE_HEIGHT = 4/);
+  assert.match(scene, /900 86px Arial/);
+  assert.match(scene, /bezierCurveTo/);
+  assert.match(scene, /context\.arc\(x, y, radius/);
   assert.match(scene, /destroyEmployeeProps/);
   assert.match(scene, /employeeProp/);
   assert.match(scene, /enragePursuer/);

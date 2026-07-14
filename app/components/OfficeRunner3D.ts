@@ -119,31 +119,51 @@ function addRoleLabel(group: THREE.Group, label: string, color: number) {
   group.add(labelSprite);
 }
 
+const SPEECH_BUBBLE_WIDTH = 9.6;
+const SPEECH_BUBBLE_HEIGHT = 4;
+
 function speechTexture(message: string) {
-  const canvas = document.createElement("canvas"); canvas.width = 1024; canvas.height = 300;
+  const canvas = document.createElement("canvas"); canvas.width = 1536; canvas.height = 640;
   const context = canvas.getContext("2d")!;
-  context.fillStyle = "rgba(255,255,255,.97)";
-  context.beginPath(); context.roundRect(18, 18, 988, 250, 45); context.fill();
-  context.fillStyle = "rgba(255,255,255,.97)";
-  context.beginPath(); context.moveTo(470, 265); context.lineTo(520, 298); context.lineTo(555, 265); context.fill();
-  context.strokeStyle = "rgba(6,15,23,.9)"; context.lineWidth = 12; context.lineJoin = "round";
-  context.beginPath(); context.roundRect(18, 18, 988, 250, 45); context.stroke();
-  context.fillStyle = "#09131b"; context.font = "900 54px Arial"; context.textAlign = "center"; context.textBaseline = "middle";
+  context.fillStyle = "rgba(255,255,255,.98)";
+  context.strokeStyle = "rgba(6,15,23,.94)";
+  context.lineWidth = 20;
+  context.lineJoin = "round";
+  context.shadowColor = "rgba(0,0,0,.32)";
+  context.shadowBlur = 26;
+  context.shadowOffsetY = 18;
+  context.beginPath();
+  context.moveTo(270, 500);
+  context.bezierCurveTo(100, 500, 60, 385, 160, 300);
+  context.bezierCurveTo(95, 175, 240, 70, 385, 125);
+  context.bezierCurveTo(475, 28, 640, 42, 710, 120);
+  context.bezierCurveTo(825, 28, 1000, 52, 1055, 138);
+  context.bezierCurveTo(1215, 78, 1415, 180, 1350, 320);
+  context.bezierCurveTo(1460, 405, 1360, 515, 1220, 510);
+  context.bezierCurveTo(1090, 585, 430, 570, 270, 500);
+  context.closePath();
+  context.fill();
+  context.shadowColor = "transparent";
+  context.stroke();
+  for (const [x, y, radius] of [[735, 566, 34], [675, 606, 18]] as const) {
+    context.beginPath(); context.arc(x, y, radius, 0, Math.PI * 2); context.fill(); context.stroke();
+  }
+  context.fillStyle = "#07131d"; context.font = "900 86px Arial"; context.textAlign = "center"; context.textBaseline = "middle";
   const words = message.split(/\s+/); const lines: string[] = []; let current = "";
   for (const word of words) {
     const candidate = current ? `${current} ${word}` : word;
-    if (context.measureText(candidate).width > 870 && current) { lines.push(current); current = word; } else current = candidate;
+    if (context.measureText(candidate).width > 1160 && current) { lines.push(current); current = word; } else current = candidate;
   }
   if (current) lines.push(current);
-  const visibleLines = lines.slice(0, 3); const startY = 143 - (visibleLines.length - 1) * 38;
-  visibleLines.forEach((line, index) => context.fillText(line, 512, startY + index * 76));
+  const visibleLines = lines.slice(0, 3); const startY = 310 - (visibleLines.length - 1) * 54;
+  visibleLines.forEach((line, index) => context.fillText(line, 760, startY + index * 108));
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = 4; return texture;
 }
 
 function addSpeechBubble(group: THREE.Group, message?: string) {
   if (!message) return;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: speechTexture(message), transparent: true, depthTest: false, depthWrite: false }));
-  sprite.position.set(0, 5.25, 0); sprite.scale.set(6.2, 1.82, 1); sprite.renderOrder = 31; sprite.userData.speechBubble = true; sprite.userData.speechText = message; group.add(sprite);
+  sprite.position.set(0, 6.4, 0); sprite.scale.set(SPEECH_BUBBLE_WIDTH, SPEECH_BUBBLE_HEIGHT, 1); sprite.renderOrder = 31; sprite.userData.speechBubble = true; sprite.userData.speechText = message; group.add(sprite);
 }
 
 function updateSpeechBubble(group: THREE.Group, message?: string) {
@@ -356,7 +376,7 @@ function updateRoleLabels(root: THREE.Object3D, z: number, visible = true) {
     if (object instanceof THREE.Sprite && object.userData.speechBubble) {
       object.visible = visible;
       const bubbleScale = 1 + (distanceScale - 1) * 0.62;
-      object.scale.set(6.2 * bubbleScale, 1.82 * bubbleScale, 1);
+      object.scale.set(SPEECH_BUBBLE_WIDTH * bubbleScale, SPEECH_BUBBLE_HEIGHT * bubbleScale, 1);
     }
   });
 }
