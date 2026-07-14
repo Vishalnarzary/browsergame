@@ -1,6 +1,8 @@
 # Corporate Wars
 
-A complete browser arcade game with a perspective-rendered office, five click/keyboard lanes, escalating targets, combo scoring, suspicion, procedural sound, local high scores, novelty events, and a 100-second start-to-retry loop.
+A complete browser arcade game with a perspective-rendered office, three click/keyboard lanes, escalating targets, combo scoring, suspicion, procedural sound, local high scores, novelty events, and a 100-second start-to-retry loop.
+
+The current run-and-slap design adds precision grades, a Focus meter and score-doubling Flow State, mail-cart obstacles, espresso pickups, escalating formation waves, and role-specific timing windows.
 
 ## Play locally
 

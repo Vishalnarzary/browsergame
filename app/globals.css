@@ -154,6 +154,11 @@ button:focus-visible { outline: 3px solid var(--mint); outline-offset: 4px; }
 .timer-card { min-width: 152px; text-align: center; padding-inline: 24px; border-color: rgba(255, 215, 94, .22); }
 .timer-card span { display: block; font-size: 9px; font-weight: 900; letter-spacing: .18em; color: rgba(255, 243, 207, .62); }
 .timer-card strong { display: block; margin-top: 3px; color: var(--yellow); font: 900 clamp(23px, 3vw, 36px)/1 "Arial Black", Impact, sans-serif; letter-spacing: .02em; }
+.focus-mini { position: relative; height: 10px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: rgba(0,0,0,.42); }
+.focus-mini i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2b8ca1, var(--mint)); transition: width .16s ease; }
+.focus-mini b { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 6px; letter-spacing: .2em; text-shadow: 0 1px 2px #000; }
+.focus-mini.flowing { box-shadow: 0 0 15px rgba(111,255,211,.55); animation: flowPulse .45s ease-in-out infinite alternate; }
+.focus-mini.flowing i { background: linear-gradient(90deg, var(--mint), #fff, var(--mint)); }
 .timer-danger { animation: timerPulse .6s ease-in-out infinite alternate; border-color: rgba(255,61,97,.65); }
 .timer-danger strong { color: #ff5d79; }
 
@@ -335,6 +340,9 @@ kbd {
 .best-score { display: flex; justify-content: space-between; align-items: end; margin-top: 19px; padding-top: 17px; border-top: 3px solid #10212a; }
 .best-score span { font-size: 9px; font-weight: 900; letter-spacing: .18em; }
 .best-score strong { font: 900 28px "Arial Black", sans-serif; letter-spacing: -.05em; }
+.skill-note { margin-top: 14px; padding: 12px; border: 1px dashed rgba(16,33,42,.3); background: rgba(111,255,211,.12); }
+.skill-note b { display: block; margin-bottom: 4px; font-size: 8px; letter-spacing: .17em; }
+.skill-note span { display: block; color: rgba(16,33,42,.72); font-size: 10px; line-height: 1.4; }
 
 .pause-screen, .summary-screen { place-items: center; padding: 30px; background: rgba(4,11,18,.84); backdrop-filter: blur(8px); }
 .pause-card, .summary-card { width: min(560px, 100%); padding: clamp(29px, 5vw, 58px); text-align: center; border: 1px solid rgba(111,255,211,.24); border-radius: 18px; background: linear-gradient(145deg, rgba(15,29,42,.96), rgba(5,13,21,.98)); box-shadow: 0 28px 90px rgba(0,0,0,.5); }
@@ -348,7 +356,9 @@ kbd {
 .final-score { margin: 18px 0; padding: 17px; border-block: 1px solid rgba(255,255,255,.12); }
 .final-score span, .summary-stats span { display: block; color: rgba(220,239,231,.5); font-size: 8px; font-weight: 900; letter-spacing: .2em; }
 .final-score strong { display: block; color: var(--mint); font: 900 clamp(47px, 7.5vw, 82px)/1 "Arial Black", sans-serif; letter-spacing: -.07em; }
-.summary-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: rgba(255,255,255,.1); }
+.summary-stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; background: rgba(255,255,255,.1); }
+.summary-stats > div { grid-column: span 2; }
+.summary-stats > div:nth-last-child(-n+2) { grid-column: span 3; }
 .summary-stats > div { padding: 14px; background: #0c1824; }
 .summary-stats b { display: block; margin-top: 4px; color: #fff; font: 900 21px "Arial Black", sans-serif; }
 
@@ -357,6 +367,7 @@ kbd {
 @keyframes dangerPulse { to { opacity: .35; } }
 @keyframes timerPulse { to { transform: scale(1.045); } }
 @keyframes promptFloat { to { transform: translate(-50%, -6px); } }
+@keyframes flowPulse { to { transform: scaleX(1.035); filter: brightness(1.35); } }
 
 @media (max-width: 900px) {
   .game-shell { padding: 0; min-height: 100svh; }
