@@ -6,6 +6,8 @@ The player is the only automatic runner. Rounded human characters have faces, ha
 
 Five glowing 3D power-ups add route decisions: Titan Crush grows the hero and clears two lanes, Distance Laser automatically fires down the selected lane, Long-Leg Kick attacks across two lanes, Phase Shift passes through obstacles and pursuers, and Echo Clone covers the mirrored lane. The server asks Groq for a strict structured batch of one to four drops at the start of each minute. Groq decides every drop's kind, lane, spawn time, pickup window, active duration, and rarity; validated local batches keep the mechanic playable if the API is unavailable.
 
+Every normal slap randomly selects one of three stylized 3D reactions: a full-body launch, a broken-arm fall, or a double-leg-break launch with bone-shard particles. The game randomly alternates between `public/audio/slap1.mp3` and `public/audio/slap2.mp3`, and uses `public/audio/bone-break.mp3` for either break reaction. If any clip is absent, a synthesized slap or crack plays automatically instead.
+
 ## Play locally
 
 Requires Node.js 22.13 or newer.

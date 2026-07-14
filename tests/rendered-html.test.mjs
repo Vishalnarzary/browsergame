@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
 async function loadWorker() {
@@ -62,6 +62,12 @@ test("ships the strategic 3D loop and keeps the Groq key server-side", async () 
   assert.match(game, /triggerJump/);
   assert.match(game, /TABLE VAULT/);
   assert.match(game, /hitStopUntil/);
+  assert.match(game, /"launch" \| "arm_break" \| "leg_break"/);
+  assert.match(game, /\/audio\/slap1\.mp3/);
+  assert.match(game, /\/audio\/slap2\.mp3/);
+  assert.match(game, /\/audio\/bone-break\.mp3/);
+  assert.match(game, /playSlapImpact/);
+  assert.match(game, /playNoiseBurst/);
   assert.match(game, /fetchPowerupBatch/);
   assert.match(game, /nextPowerupBatchAt \+= 60/);
   assert.match(game, /titan/);
@@ -76,6 +82,9 @@ test("ships the strategic 3D loop and keeps the Groq key server-side", async () 
   assert.match(scene, /new THREE\.PerspectiveCamera/);
   assert.match(scene, /animateRig/);
   assert.match(scene, /makeImpact/);
+  assert.match(scene, /target\.hitOutcome === "arm_break"/);
+  assert.match(scene, /target\.hitOutcome === "leg_break"/);
+  assert.match(scene, /boneShard/);
   assert.match(scene, /speedMarkers/);
   assert.match(scene, /scene\.rotation\.y = Math\.PI/);
   assert.match(scene, /new THREE\.SpriteMaterial/);
@@ -117,4 +126,13 @@ test("powerup planner fails fast without a secret so scheduled fallback drops st
     body: JSON.stringify({ score: 100, elapsedSec: 0, difficultyTier: 1, activePowerups: [], recentKinds: [] }),
   }), env, context);
   assert.equal(response.status, 503);
+});
+
+test("includes both randomized slap recordings and the bone-break recording", async () => {
+  const sizes = await Promise.all([
+    stat(new URL("../public/audio/slap1.mp3", import.meta.url)),
+    stat(new URL("../public/audio/slap2.mp3", import.meta.url)),
+    stat(new URL("../public/audio/bone-break.mp3", import.meta.url)),
+  ]);
+  assert.ok(sizes.every((file) => file.size > 1_000));
 });

@@ -6,6 +6,8 @@ import { OfficeRunner3D, type OfficeActivity, type PowerupKind, type SceneFrame 
 type Screen = "start" | "playing" | "paused" | "summary";
 type TargetType = "colleague" | "manager" | "hr" | "intern" | "ceo";
 type EventType = "spawn_modifier" | "score_modifier" | "hazard_toggle" | "flavor_only";
+type SlapOutcome = "launch" | "arm_break" | "leg_break";
+type ImpactSound = "slap1" | "slap2" | "bone-break";
 
 type Target = {
   id: number;
@@ -18,6 +20,7 @@ type Target = {
   alignedAtZ?: number;
   resolved: boolean;
   hitMode?: "back" | "side";
+  hitOutcome?: SlapOutcome;
   hitAt?: number;
 };
 
@@ -219,6 +222,16 @@ function eventNumber(event: NoveltyEvent | null, key: string, fallback: number) 
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function playNoiseBurst(audio: AudioContext, start: number, duration: number, frequency: number, volume: number) {
+  const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let index = 0; index < data.length; index++) data[index] = (Math.random() * 2 - 1) * Math.pow(1 - index / data.length, 2.2);
+  const source = audio.createBufferSource(); const filter = audio.createBiquadFilter(); const gain = audio.createGain();
+  source.buffer = buffer; filter.type = "bandpass"; filter.frequency.value = frequency; filter.Q.value = 0.72;
+  gain.gain.setValueAtTime(volume, start); gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  source.connect(filter).connect(gain).connect(audio.destination); source.start(start); source.stop(start + duration);
+}
+
 function hasPowerup(game: GameData, kind: PowerupKind) { return game.activePowerups.some((powerup) => powerup.kind === kind && powerup.endsAt > game.elapsed); }
 function powerLanes(game: GameData) {
   const main = game.selectedLane;
@@ -233,6 +246,7 @@ export default function CorporateWarsGame() {
   const screenRef = useRef<Screen>("start");
   const gameRef = useRef<GameData>(makeGame());
   const audioRef = useRef<AudioContext | null>(null);
+  const impactAudioRef = useRef<Partial<Record<ImpactSound, { audio: HTMLAudioElement; ready: boolean }>>>({});
   const mutedRef = useRef(false);
   const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [screen, setScreen] = useState<Screen>("start");
@@ -258,6 +272,20 @@ export default function CorporateWarsGame() {
     return () => cancelAnimationFrame(restoreFrame);
   }, []);
 
+  useEffect(() => {
+    const paths: Record<ImpactSound, string> = {
+      slap1: "/audio/slap1.mp3", slap2: "/audio/slap2.mp3", "bone-break": "/audio/bone-break.mp3",
+    };
+    for (const [name, path] of Object.entries(paths) as [ImpactSound, string][]) {
+      const audio = new Audio(path); audio.preload = "auto";
+      const entry = { audio, ready: false };
+      audio.addEventListener("canplay", () => { entry.ready = true; }, { once: true });
+      audio.addEventListener("error", () => { entry.ready = false; }, { once: true });
+      audio.load(); impactAudioRef.current[name] = entry;
+    }
+    return () => { Object.values(impactAudioRef.current).forEach((entry) => entry?.audio.pause()); impactAudioRef.current = {}; };
+  }, []);
+
   const tone = useCallback((frequency: number, duration = 0.1, type: OscillatorType = "triangle", volume = 0.04, slide = 0) => {
     if (mutedRef.current) return;
     try {
@@ -273,6 +301,34 @@ export default function CorporateWarsGame() {
       oscillator.connect(gain).connect(audio.destination);
       oscillator.start(); oscillator.stop(audio.currentTime + duration);
     } catch { /* Audio is optional. */ }
+  }, []);
+
+  const playSlapImpact = useCallback((outcome: SlapOutcome) => {
+    if (mutedRef.current) return;
+    const slapName: ImpactSound = Math.random() < 0.5 ? "slap1" : "slap2";
+    const playClip = (name: ImpactSound, volume: number) => {
+      const entry = impactAudioRef.current[name];
+      if (!entry || (!entry.ready && entry.audio.readyState < HTMLMediaElement.HAVE_CURRENT_DATA)) return false;
+      const clip = entry.audio.cloneNode(true) as HTMLAudioElement; clip.volume = volume; void clip.play().catch(() => undefined); return true;
+    };
+    const playedSlap = playClip(slapName, 0.82);
+    const needsBreak = outcome !== "launch";
+    const playedBreak = needsBreak && playClip("bone-break", 0.7);
+    try {
+      const audio = audioRef.current ?? new AudioContext(); audioRef.current = audio;
+      const now = audio.currentTime;
+      if (!playedSlap) {
+        const firstVariant = slapName === "slap1";
+        playNoiseBurst(audio, now, firstVariant ? 0.085 : 0.12, firstVariant ? 1550 : 980, firstVariant ? 0.23 : 0.27);
+        const thud = audio.createOscillator(); const gain = audio.createGain(); thud.type = "sine";
+        thud.frequency.setValueAtTime(firstVariant ? 145 : 105, now); thud.frequency.exponentialRampToValueAtTime(48, now + 0.11);
+        gain.gain.setValueAtTime(0.11, now); gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+        thud.connect(gain).connect(audio.destination); thud.start(now); thud.stop(now + 0.12);
+      }
+      if (needsBreak && !playedBreak) {
+        for (let index = 0; index < 3; index++) playNoiseBurst(audio, now + 0.035 + index * 0.032, 0.035, 2400 - index * 430, 0.13 - index * 0.02);
+      }
+    } catch { /* Custom impact audio is optional. */ }
   }, []);
 
   const showFeedback = useCallback((text: string, kind: "clean" | "risk" | "danger") => {
@@ -444,7 +500,10 @@ export default function CorporateWarsGame() {
     const game = gameRef.current;
     const clean = target.cleanLine && target.alignedAtZ !== undefined && target.alignedAtZ <= CLEAN_COMMIT_Z && Math.abs(game.playerLane - target.lane) < SLAP_MIN * 0.3;
     const mode = clean ? "back" : "side";
-    target.resolved = true; target.hitMode = mode; target.hitAt = game.elapsed;
+    const outcomeRoll = Math.random();
+    const outcome: SlapOutcome = outcomeRoll < 0.42 ? "launch" : outcomeRoll < 0.72 ? "arm_break" : "leg_break";
+    target.resolved = true; target.hitMode = mode; target.hitOutcome = outcome; target.hitAt = game.elapsed;
+    playSlapImpact(outcome);
     game.slapUntil = game.elapsed + 0.42; game.hitStopUntil = game.elapsed + 0.105; game.slaps += 1; game.firstHit = true;
     const cfg = TARGETS[target.type];
     const eventMultiplier = game.activeEvent?.event_type === "score_modifier" ? eventNumber(game.activeEvent, "score_multiplier", 1) : 1;
@@ -466,7 +525,7 @@ export default function CorporateWarsGame() {
       game.focus = 0; game.flowUntil = game.elapsed + 6.5; game.flowActivations += 1;
       showFeedback("FLOW STATE ×2", "clean"); tone(520, 0.35, "triangle", 0.07, 410);
     }
-  }, [showFeedback, tone]);
+  }, [playSlapImpact, showFeedback, tone]);
 
   const resolvePowerHit = useCallback((target: Target, kind: PowerupKind) => {
     if (target.resolved) return;
@@ -663,7 +722,7 @@ export default function CorporateWarsGame() {
         const contract = CONTRACTS[game.challengeIndex]; const progress = contractProgress(game, contract);
         if (!game.challengeDone && progress >= contract.target) { game.challengeDone = true; game.score += contract.reward; showFeedback(`CONTRACT COMPLETE  +${contract.reward}`, "clean"); tone(660, 0.3, "triangle", 0.07, 280); }
 
-        game.targets = game.targets.filter((target) => target.resolved ? Boolean(target.hitAt !== undefined && game.elapsed - target.hitAt < 0.48) : target.z < 9);
+        game.targets = game.targets.filter((target) => target.resolved ? Boolean(target.hitAt !== undefined && game.elapsed - target.hitAt < 1.18) : target.z < 9);
         game.items = game.items.filter((item) => !item.resolved && item.z < 15);
         const outrun = game.pursuers.filter((pursuer) => pursuer.gap >= 8);
         if (outrun.length) {
@@ -686,7 +745,7 @@ export default function CorporateWarsGame() {
         slapPulse: clamp((game.slapUntil - game.elapsed) / 0.42, 0, 1), jumpProgress: game.elapsed < game.jumpUntil ? clamp((game.elapsed - game.jumpStartedAt) / 0.94, 0, 1) : 0,
         speedFactor: game.speedFactor, flow: game.elapsed < game.flowUntil,
         stumble: game.elapsed < game.stumbleUntil,
-        targets: game.targets.map((target) => ({ id: target.id, lane: target.lane, z: target.z, color: TARGETS[target.type].color, suit: TARGETS[target.type].suit, role: target.type.toUpperCase(), activity: target.activity, seed: target.seed, hitMode: target.hitMode, hitAge: target.hitAt === undefined ? undefined : game.elapsed - target.hitAt })),
+        targets: game.targets.map((target) => ({ id: target.id, lane: target.lane, z: target.z, color: TARGETS[target.type].color, suit: TARGETS[target.type].suit, role: target.type.toUpperCase(), activity: target.activity, seed: target.seed, hitMode: target.hitMode, hitOutcome: target.hitOutcome, hitAge: target.hitAt === undefined ? undefined : game.elapsed - target.hitAt })),
         items: game.items.map((item) => ({ id: item.id, lane: item.lane, z: item.z, type: item.type })),
         pursuers: game.pursuers.map((pursuer) => ({ ...pursuer, role: pursuer.type.toUpperCase(), color: TARGETS[pursuer.type].color, suit: TARGETS[pursuer.type].suit })),
         powerups: game.mapPowerups.map((powerup) => ({ id: powerup.id, lane: powerup.lane, z: powerup.z, kind: powerup.kind, rarity: powerup.rarity })),

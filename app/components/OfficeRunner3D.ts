@@ -13,6 +13,7 @@ export type SceneTarget = {
   activity: OfficeActivity;
   seed: number;
   hitMode?: "back" | "side";
+  hitOutcome?: "launch" | "arm_break" | "leg_break";
   hitAge?: number;
 };
 
@@ -50,6 +51,9 @@ type Rig = THREE.Group & {
     rightHand: THREE.Mesh;
     activity?: OfficeActivity;
     seed?: number;
+    isPrimaryTarget?: boolean;
+    hitBasePosition?: THREE.Vector3;
+    hitBaseRotation?: THREE.Euler;
   };
 };
 
@@ -223,6 +227,7 @@ function createDeskScene(person: Rig) {
 
 function createActivityScene(activity: OfficeActivity, bodyColor: number, suitColor: number, seed: number, roleLabel: string) {
   const primary = createPerson(bodyColor, suitColor, false, roleLabel);
+  primary.userData.isPrimaryTarget = true;
   primary.userData.activity = activity;
   primary.userData.seed = seed;
   if (activity === "desk") return createDeskScene(primary);
@@ -493,6 +498,15 @@ export class OfficeRunner3D {
       particle.userData.direction = new THREE.Vector3(Math.cos(angle), Math.sin(angle), (index % 2 ? 1 : -1) * 0.28);
       group.add(particle);
     }
+    if (target.hitOutcome === "arm_break" || target.hitOutcome === "leg_break") {
+      const shardCount = target.hitOutcome === "leg_break" ? 7 : 4;
+      for (let index = 0; index < shardCount; index++) {
+        const shard = mesh(new THREE.BoxGeometry(0.07, 0.26 + (index % 2) * 0.09, 0.07), new THREE.MeshBasicMaterial({ color: 0xfff5dc, transparent: true, opacity: 0.95, depthWrite: false }), false);
+        const angle = (index / shardCount) * Math.PI * 2 + 0.3;
+        shard.userData.direction = new THREE.Vector3(Math.cos(angle), 0.45 + Math.sin(angle) * 0.5, (index % 2 ? 1 : -1) * 0.36);
+        shard.userData.boneShard = true; group.add(shard);
+      }
+    }
     group.position.set(LANES[target.lane], 2.25, target.z + 0.25);
     return group;
   }
@@ -595,13 +609,44 @@ export class OfficeRunner3D {
       let object = this.targetMeshes.get(target.id);
       if (!object) { object = this.makeTarget(target); this.targetMeshes.set(target.id, object); this.scene.add(object); }
       object.position.set(LANES[target.lane], 0, target.z);
+      let primaryRig: Rig | undefined;
+      walkRigs(object, (rig) => {
+        animateRig(rig, this.clock, false);
+        if (rig.userData.isPrimaryTarget) primaryRig = rig;
+      });
       if (target.hitMode) {
         const age = target.hitAge ?? 0;
-        object.rotation.z = (target.hitMode === "side" ? 1 : -1) * Math.min(1.25, age * 5);
-        object.position.y = Math.max(0, Math.sin(Math.min(1, age * 4) * Math.PI) * 0.7);
-        object.position.x += (target.hitMode === "side" ? 1 : -1) * age * 2.2;
+        const direction = target.hitMode === "side" ? 1 : -1;
+        if (primaryRig) {
+          primaryRig.userData.hitBasePosition ??= primaryRig.position.clone();
+          primaryRig.userData.hitBaseRotation ??= primaryRig.rotation.clone();
+          primaryRig.position.copy(primaryRig.userData.hitBasePosition);
+          primaryRig.rotation.copy(primaryRig.userData.hitBaseRotation);
+          if (target.hitOutcome === "arm_break") {
+            const fall = THREE.MathUtils.clamp((age - 0.1) / 0.62, 0, 1);
+            primaryRig.userData.rightArm.rotation.set(-0.7, 0, direction * -2.35);
+            primaryRig.userData.rightArm.position.x = 0.57 + direction * age * 0.48;
+            primaryRig.rotation.z += direction * fall * 1.48;
+            primaryRig.position.x += direction * fall * 0.58;
+            primaryRig.position.y += Math.sin(Math.min(1, age * 5) * Math.PI) * 0.28;
+          } else if (target.hitOutcome === "leg_break") {
+            const arc = Math.sin(Math.min(1, age / 1.12) * Math.PI);
+            primaryRig.userData.leftLeg.rotation.set(1.15 + age * 2.2, 0, 1.25);
+            primaryRig.userData.rightLeg.rotation.set(-1.15 - age * 2.2, 0, -1.25);
+            primaryRig.userData.leftLeg.position.x = -0.25 - age * 0.72;
+            primaryRig.userData.rightLeg.position.x = 0.25 + age * 0.72;
+            primaryRig.position.x += direction * age * 3.5;
+            primaryRig.position.y += arc * 3.25 + age * 0.5;
+            primaryRig.rotation.x += age * 7.2; primaryRig.rotation.z += direction * age * 3.4;
+          } else {
+            const arc = Math.sin(Math.min(1, age / 1.12) * Math.PI);
+            primaryRig.position.x += direction * age * 4.6;
+            primaryRig.position.y += arc * 3.7 + age * 0.75;
+            primaryRig.position.z -= age * 4.2;
+            primaryRig.rotation.x += age * 5.4; primaryRig.rotation.z += direction * age * 7.6;
+          }
+        }
       }
-      walkRigs(object, (rig) => animateRig(rig, this.clock, false));
       updateRoleLabels(object, target.z);
     }
 
@@ -618,6 +663,11 @@ export class OfficeRunner3D {
         if (child.userData.ringIndex !== undefined) {
           const scale = 1 + age * (3.8 + child.userData.ringIndex * 0.7);
           child.scale.setScalar(scale); material.opacity = Math.max(0, (0.46 - age) * 2.1) * (1 - child.userData.ringIndex * 0.18);
+        } else if (child.userData.boneShard) {
+          const direction = child.userData.direction as THREE.Vector3;
+          child.position.copy(direction).multiplyScalar(age * 7.2);
+          child.rotation.x = age * 12; child.rotation.z = age * 9;
+          material.opacity = Math.max(0, 1 - age / 0.78);
         } else {
           const direction = child.userData.direction as THREE.Vector3;
           child.position.copy(direction).multiplyScalar(age * 5.4);
