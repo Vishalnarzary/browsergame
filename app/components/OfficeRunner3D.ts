@@ -8,6 +8,7 @@ export type SceneTarget = {
   z: number;
   color: string;
   suit: string;
+  role: string;
   activity: OfficeActivity;
   seed: number;
   hitMode?: "back" | "side";
@@ -15,7 +16,7 @@ export type SceneTarget = {
 };
 
 export type SceneItem = { id: number; lane: number; z: number; type: "cart" | "coffee" };
-export type ScenePursuer = { id: number; lane: number; gap: number; seed: number };
+export type ScenePursuer = { id: number; lane: number; gap: number; seed: number; role: string; color: string; suit: string };
 
 export type SceneFrame = {
   running: boolean;
@@ -44,7 +45,6 @@ type Rig = THREE.Group & {
 };
 
 const LANES = [-3.35, 0, 3.35];
-const skin = new THREE.MeshStandardMaterial({ color: 0xf1ad78, roughness: 0.85 });
 const dark = new THREE.MeshStandardMaterial({ color: 0x132436, roughness: 0.72 });
 const shoe = new THREE.MeshStandardMaterial({ color: 0x071019, roughness: 0.9 });
 
@@ -63,43 +63,109 @@ function limb(material: THREE.Material, length: number, radius: number) {
   return pivot;
 }
 
-function createPerson(bodyColor: number, accentColor: number, runner = false): Rig {
+function roleTexture(label: string, color: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256; canvas.height = 96;
+  const context = canvas.getContext("2d")!;
+  context.fillStyle = "#f8fff8";
+  context.roundRect(5, 5, 246, 86, 15); context.fill();
+  context.strokeStyle = `#${color.toString(16).padStart(6, "0")}`;
+  context.lineWidth = 9; context.stroke();
+  context.fillStyle = "#10212a";
+  const size = label.length > 9 ? 27 : label.length > 6 ? 32 : 39;
+  context.font = `900 ${size}px Arial`;
+  context.textAlign = "center"; context.textBaseline = "middle";
+  context.fillText(label, 128, 51);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+function addRolePatch(group: THREE.Group, label: string, color: number) {
+  if (!label) return;
+  const material = new THREE.MeshBasicMaterial({ map: roleTexture(label, color), transparent: true, side: THREE.DoubleSide, depthWrite: false });
+  const back = mesh(new THREE.PlaneGeometry(0.68, 0.255), material, false);
+  back.position.set(0, 2.23, 0.34);
+  const front = mesh(new THREE.PlaneGeometry(0.68, 0.255), material, false);
+  front.position.set(0, 2.23, -0.34); front.rotation.y = Math.PI;
+  group.add(back, front);
+}
+
+function createPerson(bodyColor: number, accentColor: number, runner = false, roleLabel = ""): Rig {
   const group = new THREE.Group() as Rig;
+  const skinTones = [0xf2b486, 0xd89262, 0x9f6042, 0x6d3f2d, 0xe6a575];
+  const skinColor = skinTones[Math.abs((bodyColor + accentColor) % skinTones.length)];
+  const skin = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.82 });
   const body = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.68, metalness: 0.03 });
   const accent = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.72 });
-  const torso = mesh(new THREE.BoxGeometry(runner ? 0.9 : 0.82, 1.2, 0.5), body);
-  torso.position.y = 2.05;
+  const white = new THREE.MeshStandardMaterial({ color: 0xf1f5ef, roughness: 0.82 });
+  const torso = mesh(new THREE.CapsuleGeometry(runner ? 0.43 : 0.4, 0.56, 8, 16), body);
+  torso.scale.set(1, 1, 0.68);
+  torso.position.y = 2.08;
   torso.rotation.x = runner ? -0.08 : 0;
   group.add(torso);
+
+  const shirt = mesh(new THREE.CapsuleGeometry(0.31, 0.25, 6, 12), white);
+  shirt.scale.set(1, 1, 0.64); shirt.position.set(0, 2.28, -0.12);
+  group.add(shirt);
+  const tie = mesh(new THREE.CapsuleGeometry(0.045, 0.3, 4, 8), accent);
+  tie.position.set(0, 2.22, -0.36); tie.rotation.z = Math.PI;
+  group.add(tie);
+  const hips = mesh(new THREE.SphereGeometry(0.36, 14, 10), accent);
+  hips.scale.set(1, 0.58, 0.72); hips.position.y = 1.46;
+  group.add(hips);
 
   const neck = mesh(new THREE.CylinderGeometry(0.13, 0.15, 0.22, 8), skin);
   neck.position.y = 2.78;
   group.add(neck);
-  const head = mesh(new THREE.IcosahedronGeometry(0.38, 2), skin);
-  head.scale.set(0.9, 1.08, 0.9);
+  const head = mesh(new THREE.SphereGeometry(0.38, 18, 14), skin);
+  head.scale.set(0.92, 1.08, 0.94);
   head.position.y = 3.18;
   group.add(head);
-  const hair = mesh(new THREE.SphereGeometry(0.36, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.48), dark);
+  const hair = mesh(new THREE.SphereGeometry(0.37, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), dark);
   hair.position.y = 3.36;
   group.add(hair);
+  for (const x of [-0.38, 0.38]) {
+    const ear = mesh(new THREE.SphereGeometry(0.075, 10, 8), skin);
+    ear.position.set(x, 3.18, 0); group.add(ear);
+  }
+  const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x18212a, roughness: 0.7 });
+  for (const x of [-0.13, 0.13]) {
+    const eye = mesh(new THREE.SphereGeometry(0.044, 10, 8), eyeMaterial, false);
+    eye.position.set(x, 3.25, -0.355); group.add(eye);
+    const brow = mesh(new THREE.CapsuleGeometry(0.016, 0.11, 3, 6), dark, false);
+    brow.rotation.z = Math.PI / 2; brow.position.set(x, 3.34, -0.354); group.add(brow);
+  }
+  const nose = mesh(new THREE.ConeGeometry(0.065, 0.16, 10), skin);
+  nose.rotation.x = -Math.PI / 2; nose.position.set(0, 3.16, -0.41); group.add(nose);
+  const mouth = mesh(new THREE.CapsuleGeometry(0.014, 0.12, 3, 6), new THREE.MeshStandardMaterial({ color: 0x8d3e45 }), false);
+  mouth.rotation.z = Math.PI / 2; mouth.position.set(0, 3.03, -0.37); group.add(mouth);
 
   const leftArm = limb(body, 1.05, 0.14);
   const rightArm = limb(body, 1.05, 0.14);
   leftArm.position.set(-0.57, 2.55, 0);
   rightArm.position.set(0.57, 2.55, 0);
   group.add(leftArm, rightArm);
+  const leftHand = mesh(new THREE.SphereGeometry(0.16, 12, 9), skin);
+  const rightHand = leftHand.clone();
+  leftHand.position.y = -1; rightHand.position.y = -1;
+  leftArm.add(leftHand); rightArm.add(rightHand);
 
   const leftLeg = limb(accent, 1.22, 0.17);
   const rightLeg = limb(accent, 1.22, 0.17);
   leftLeg.position.set(-0.25, 1.45, 0);
   rightLeg.position.set(0.25, 1.45, 0);
   group.add(leftLeg, rightLeg);
-  const leftShoe = mesh(new THREE.BoxGeometry(0.31, 0.2, 0.62), shoe);
+  const leftShoe = mesh(new THREE.CapsuleGeometry(0.15, 0.34, 5, 10), shoe);
   const rightShoe = leftShoe.clone();
-  leftShoe.position.set(0, -1.14, -0.15);
-  rightShoe.position.set(0, -1.14, -0.15);
+  leftShoe.rotation.x = Math.PI / 2; rightShoe.rotation.x = Math.PI / 2;
+  leftShoe.position.set(0, -1.13, -0.18);
+  rightShoe.position.set(0, -1.13, -0.18);
   leftLeg.add(leftShoe);
   rightLeg.add(rightShoe);
+
+  addRolePatch(group, roleLabel, bodyColor);
 
   group.userData = { leftArm, rightArm, leftLeg, rightLeg, torso };
   return group;
@@ -135,8 +201,8 @@ function createDeskScene(person: Rig) {
   return group;
 }
 
-function createActivityScene(activity: OfficeActivity, bodyColor: number, suitColor: number, seed: number) {
-  const primary = createPerson(bodyColor, suitColor);
+function createActivityScene(activity: OfficeActivity, bodyColor: number, suitColor: number, seed: number, roleLabel: string) {
+  const primary = createPerson(bodyColor, suitColor, false, roleLabel);
   primary.userData.activity = activity;
   primary.userData.seed = seed;
   if (activity === "desk") return createDeskScene(primary);
@@ -145,9 +211,9 @@ function createActivityScene(activity: OfficeActivity, bodyColor: number, suitCo
   group.add(primary);
   if (activity === "chatting") {
     primary.position.set(0, 0, 0.25);
-    primary.rotation.y = Math.PI;
-    const mateA = createPerson(0xe7b956, 0x426a7d);
-    const mateB = createPerson(0x78d9ca, 0x72547f);
+    primary.rotation.y = 0;
+    const mateA = createPerson(0xe7b956, 0x426a7d, false, "COLLEAGUE");
+    const mateB = createPerson(0x78d9ca, 0x72547f, false, "INTERN");
     mateA.scale.setScalar(0.88); mateB.scale.setScalar(0.88);
     mateA.position.set(-1.1, 0, -0.38); mateB.position.set(1.05, 0, -0.42);
     mateA.rotation.y = -0.65; mateB.rotation.y = 0.7;
@@ -226,8 +292,8 @@ export class OfficeRunner3D {
     this.renderer.toneMappingExposure = 1.12;
     this.scene.background = new THREE.Color(0x091522);
     this.scene.fog = new THREE.Fog(0x173143, 34, 118);
-    this.camera.position.set(0, 7.8, 14.5);
-    this.camera.lookAt(0, 1.45, -35);
+    this.camera.position.set(0, 8.8, 22.5);
+    this.camera.lookAt(0, 1.35, -39);
 
     this.scene.add(new THREE.HemisphereLight(0xbfffee, 0x13202c, 2.2));
     const key = new THREE.DirectionalLight(0xffffff, 3.2);
@@ -242,7 +308,8 @@ export class OfficeRunner3D {
     this.player = createPerson(0x1bbba0, 0x1d5f9a, true);
     this.player.scale.setScalar(1.1);
     this.player.position.set(0, 0, 5);
-    this.player.rotation.y = Math.PI;
+    // Default body front faces -Z, the same direction as the run.
+    this.player.rotation.y = 0;
     this.scene.add(this.player);
     this.resize(canvas.clientWidth || 1200, canvas.clientHeight || 700);
   }
@@ -301,7 +368,7 @@ export class OfficeRunner3D {
   }
 
   private makeTarget(target: SceneTarget) {
-    return createActivityScene(target.activity, Number.parseInt(target.color.slice(1), 16), Number.parseInt(target.suit.slice(1), 16), target.seed);
+    return createActivityScene(target.activity, Number.parseInt(target.color.slice(1), 16), Number.parseInt(target.suit.slice(1), 16), target.seed, target.role);
   }
 
   private makeItem(item: SceneItem) {
@@ -342,8 +409,9 @@ export class OfficeRunner3D {
   render(frame: SceneFrame, dt: number) {
     this.clock += dt;
     this.hallway.forEach((segment) => {
+      // Architecture moves toward the camera as the hero advances into -Z.
       const cycle = (segment.userData.baseZ + frame.distance * 0.78) % 132;
-      segment.position.z = 12 - cycle;
+      segment.position.z = -108 + cycle;
     });
 
     const desiredPlayerX = LANES[0] + (LANES[2] - LANES[0]) * (frame.playerLane / 2);
@@ -386,9 +454,9 @@ export class OfficeRunner3D {
     for (const pursuer of frame.pursuers) {
       let object = this.pursuerMeshes.get(pursuer.id);
       if (!object) {
-        object = createPerson(0xff6f61, 0x6c283a, true);
+        object = createPerson(Number.parseInt(pursuer.color.slice(1), 16), Number.parseInt(pursuer.suit.slice(1), 16), true, pursuer.role);
         object.scale.setScalar(0.98);
-        object.rotation.y = Math.PI;
+        object.rotation.y = 0;
         object.userData.seed = pursuer.seed;
         this.pursuerMeshes.set(pursuer.id, object);
         this.scene.add(object);
@@ -400,7 +468,7 @@ export class OfficeRunner3D {
 
     const cameraTargetX = (LANES[frame.targetLane] ?? 0) * 0.09;
     this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, cameraTargetX, Math.min(1, dt * 2.2));
-    this.camera.lookAt(this.camera.position.x * 0.25, 1.35, -36);
+    this.camera.lookAt(this.camera.position.x * 0.25, 1.35, -39);
     this.renderer.render(this.scene, this.camera);
   }
 

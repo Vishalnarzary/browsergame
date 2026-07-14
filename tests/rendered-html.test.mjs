@@ -57,6 +57,11 @@ test("ships the strategic 3D loop and keeps the Groq key server-side", async () 
   assert.match(scene, /new THREE\.WebGLRenderer/);
   assert.match(scene, /new THREE\.PerspectiveCamera/);
   assert.match(scene, /animateRig/);
+  assert.match(scene, /roleTexture/);
+  assert.match(scene, /new THREE\.CapsuleGeometry/);
+  assert.match(scene, /new THREE\.SphereGeometry/);
+  assert.match(scene, /segment\.position\.z = -108 \+ cycle/);
+  assert.match(scene, /this\.camera\.position\.set\(0, 8\.8, 22\.5\)/);
   assert.match(route, /process\.env\.GROQ_API_KEY/);
   assert.match(route, /openai\/gpt-oss-20b/);
   assert.doesNotMatch(game, /GROQ_API_KEY|NEXT_PUBLIC/);

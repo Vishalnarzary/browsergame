@@ -2,7 +2,7 @@
 
 A complete WebGL 3D browser arcade game with a long-view office corridor, three click/keyboard lanes, escalating targets, combo scoring, suspicion, procedural sound, local high scores, novelty events, and a 100-second start-to-retry loop.
 
-The player is the only automatic runner. Employees work at desks, talk in groups, use phones, and present around the office—without floating role labels. Line up early to approach from behind for a clean hit. A late side hit creates a pursuing employee who follows your lane; change lanes late to bait that pursuer into a mail cart. The game also includes Focus, score-doubling Flow State, espresso pickups, formation waves, rotating contracts, badges, and persistent career ranks.
+The player is the only automatic runner. Rounded human characters have faces, hands, hair, layered clothing, and role badges printed directly on their shirts instead of floating labels. Employees work at desks, talk in groups, use phones, and present around the office. Line up early to approach from behind for a clean hit. A late side hit creates a pursuing employee who follows your lane; change lanes late to bait that pursuer into a mail cart. The game also includes Focus, score-doubling Flow State, espresso pickups, formation waves, rotating contracts, badges, and persistent career ranks.
 
 ## Play locally
 

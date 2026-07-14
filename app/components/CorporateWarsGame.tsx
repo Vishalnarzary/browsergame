@@ -30,7 +30,7 @@ type RunnerItem = {
   passedPlayer: boolean;
 };
 
-type Pursuer = { id: number; lane: number; gap: number; reaction: number; seed: number };
+type Pursuer = { id: number; lane: number; gap: number; reaction: number; seed: number; type: TargetType };
 type CareerProfile = { xp: number; runs: number; badges: string[] };
 type Contract = { label: string; metric: "back" | "baits" | "flow" | "score"; target: number; reward: number };
 
@@ -351,7 +351,7 @@ export default function CorporateWarsGame() {
       tone(180, 0.13, "sawtooth", 0.075, -80);
     } else {
       game.sideHits += 1; game.combo = Math.max(1, Math.round((game.combo - 0.35) * 100) / 100); game.suspicion += target.type === "hr" ? 15 : 7;
-      game.pursuers.push({ id: ++game.pursuerId, lane: target.lane, gap: 5.6, reaction: 0.48, seed: target.seed });
+      game.pursuers.push({ id: ++game.pursuerId, lane: target.lane, gap: 5.6, reaction: 0.48, seed: target.seed, type: target.type });
       showFeedback("SIDE HIT — PURSUER JOINED", "danger"); tone(105, 0.22, "sawtooth", 0.07, 100);
     }
     game.bestCombo = Math.max(game.bestCombo, game.combo);
@@ -466,9 +466,9 @@ export default function CorporateWarsGame() {
         playerLane: game.playerLane, targetLane: game.selectedLane,
         slapPulse: clamp((game.slapUntil - game.elapsed) / 0.28, 0, 1), flow: game.elapsed < game.flowUntil,
         stumble: game.elapsed < game.stumbleUntil,
-        targets: game.targets.map((target) => ({ id: target.id, lane: target.lane, z: target.z, color: TARGETS[target.type].color, suit: TARGETS[target.type].suit, activity: target.activity, seed: target.seed, hitMode: target.hitMode, hitAge: target.hitAt === undefined ? undefined : game.elapsed - target.hitAt })),
+        targets: game.targets.map((target) => ({ id: target.id, lane: target.lane, z: target.z, color: TARGETS[target.type].color, suit: TARGETS[target.type].suit, role: target.type.toUpperCase(), activity: target.activity, seed: target.seed, hitMode: target.hitMode, hitAge: target.hitAt === undefined ? undefined : game.elapsed - target.hitAt })),
         items: game.items.map((item) => ({ id: item.id, lane: item.lane, z: item.z, type: item.type })),
-        pursuers: game.pursuers,
+        pursuers: game.pursuers.map((pursuer) => ({ ...pursuer, role: pursuer.type.toUpperCase(), color: TARGETS[pursuer.type].color, suit: TARGETS[pursuer.type].suit })),
       };
       rendererRef.current?.render(sceneFrame, dt);
       animation = requestAnimationFrame(frame);
