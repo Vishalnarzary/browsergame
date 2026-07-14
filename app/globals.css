@@ -262,7 +262,7 @@ button:focus-visible { outline: 3px solid var(--mint); outline-offset: 4px; }
 .powerup-rack {
   position: absolute;
   z-index: 14;
-  top: 227px;
+  top: 182px;
   left: 50%;
   min-width: 230px;
   max-width: min(620px, 70vw);
@@ -561,7 +561,7 @@ kbd {
   .event-toast { top: 87px; }
   .pursuit-card { top: 171px; }
   .pace-strip { top: 171px; }
-  .powerup-rack { top: 222px; }
+  .powerup-rack { top: 184px; }
   .game-footer { display: none; }
 }
 
@@ -578,7 +578,7 @@ kbd {
   .pursuit-card small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .pace-strip { top: 184px; right: 10px; padding: 8px; }
   .pace-strip span { display: none; }
-  .powerup-rack { top: 241px; min-width: 208px; max-width: calc(100vw - 20px); }
+  .powerup-rack { top: 208px; min-width: 208px; max-width: calc(100vw - 20px); }
   .first-prompt span { display: none; }
   .game-actions { bottom: 56px; right: 10px; flex-direction: column; }
   .lane-hints { bottom: 17px; }

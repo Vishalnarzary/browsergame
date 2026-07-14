@@ -26,9 +26,10 @@ test("server-renders the finished game shell", async () => {
 });
 
 test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
-  const [game, scene, route, powerupRoute, chatterRoute, chatterFallback, envExample] = await Promise.all([
+  const [game, scene, styles, route, powerupRoute, chatterRoute, chatterFallback, envExample] = await Promise.all([
     readFile(new URL("../app/components/CorporateWarsGame.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/OfficeRunner3D.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/api/novelty-event/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/powerup-batch/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/office-chatter/route.ts", import.meta.url), "utf8"),
@@ -94,6 +95,8 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   assert.match(game, /clone/);
   assert.match(game, /powerLanes/);
   assert.match(game, /AI DROP/);
+  assert.match(styles, /\.powerup-rack \{[\s\S]*?top: 182px;/);
+  assert.match(styles, /\.powerup-rack \{ top: 208px; min-width: 208px;/);
   assert.match(game, /fetchChatterBatch/);
   assert.match(game, /CHATTER_INTERVAL_SECONDS = 30/);
   assert.match(game, /nextChatterBatchAt \+= CHATTER_INTERVAL_SECONDS/);
