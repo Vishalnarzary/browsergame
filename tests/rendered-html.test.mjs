@@ -26,12 +26,13 @@ test("server-renders the finished game shell", async () => {
 });
 
 test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
-  const [game, scene, route, powerupRoute, chatterRoute, envExample] = await Promise.all([
+  const [game, scene, route, powerupRoute, chatterRoute, chatterFallback, envExample] = await Promise.all([
     readFile(new URL("../app/components/CorporateWarsGame.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/OfficeRunner3D.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/novelty-event/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/powerup-batch/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/office-chatter/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/officeChatterFallback.ts", import.meta.url), "utf8"),
     readFile(new URL("../.env.example", import.meta.url), "utf8"),
   ]);
   assert.doesNotMatch(game, /RUN_SECONDS/);
@@ -96,15 +97,13 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   assert.match(game, /nextChatterBatchAt \+= CHATTER_INTERVAL_SECONDS/);
   assert.match(game, /nextChatterBatchAt: 0/);
   assert.match(game, /candidate\.sentences\.length === 7/);
-  assert.match(game, /FALLBACK_CHATTER_BATCHES/);
+  assert.match(game, /buildFreshOfficeChatterFallback/);
   assert.match(game, /CHATTER_HISTORY_KEY/);
   assert.match(game, /chatterCursor < game\.chatterLines\.length/);
-  assert.match(game, /game\.nextChatterDisplayAt = game\.elapsed \+ 5/);
+  assert.match(game, /game\.nextChatterDisplayAt = game\.elapsed \+ 6/);
   assert.match(game, /for \(const target of game\.targets\) target\.message = undefined/);
-  assert.match(game, /activeChatterText/);
-  assert.match(game, /chatterCaption/);
-  assert.match(game, /office-caption/);
-  assert.match(game, /Math\.abs\(a\.z \+ 46\)/);
+  assert.match(game, /candidates\[Math\.floor\(Math\.random\(\) \* candidates\.length\)\]/);
+  assert.doesNotMatch(game, /office-caption/);
   assert.doesNotMatch(game, /chatterCursor\+\+ % game\.chatterLines\.length/);
   assert.match(game, /\/audio\/running\.mp3/);
   assert.match(game, /running\.loop = true/);
@@ -164,6 +163,12 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   assert.match(chatterRoute, /responseJsonSchema/);
   assert.match(chatterRoute, /slice\(-300\)/);
   assert.match(chatterRoute, /seen\.has\(normalized\)/);
+  assert.match(chatterRoute, /buildFreshOfficeChatterFallback/);
+  assert.match(chatterRoute, /X-Chatter-Source/);
+  assert.match(chatterFallback, /const TASKS/);
+  assert.match(chatterFallback, /const ACTIONS/);
+  assert.match(chatterFallback, /sentences\.length === 7/);
+  assert.match(chatterFallback, /kind: "motivation"/);
   assert.doesNotMatch(chatterRoute, /api\.groq\.com|GROQ_API_KEY/);
   assert.doesNotMatch(game, /GROQ_API_KEY|GEMINI_API_KEY|NEXT_PUBLIC/);
   assert.doesNotMatch(envExample, /NEXT_PUBLIC_(GROQ|GEMINI)/);
@@ -189,14 +194,19 @@ test("powerup planner fails fast without a secret so scheduled fallback drops st
   assert.equal(response.status, 503);
 });
 
-test("office chatter planner fails fast without a secret so fallback lines stay available", async () => {
+test("office chatter endpoint returns seven fresh fallback lines without a secret", async () => {
   const worker = await loadWorker();
   const response = await worker.fetch(new Request("http://localhost/api/office-chatter", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ score: 100, elapsedSec: 0, recentLines: [] }),
   }), env, context);
-  assert.equal(response.status, 503);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("X-Chatter-Source"), "fallback");
+  const batch = await response.json();
+  assert.equal(batch.sentences.length, 7);
+  assert.equal(new Set(batch.sentences.map((line) => line.text)).size, 7);
+  assert.ok(batch.sentences.some((line) => line.kind === "motivation"));
 });
 
 test("includes the running loop, both randomized slaps, and the bone-break recording", async () => {

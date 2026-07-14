@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { OfficeRunner3D, type OfficeActivity, type PowerupKind, type SceneFrame } from "./OfficeRunner3D";
+import { buildFreshOfficeChatterFallback } from "../lib/officeChatterFallback";
 
 type Screen = "start" | "playing" | "paused" | "summary";
 type TargetType = "colleague" | "manager" | "hr" | "intern" | "ceo";
@@ -119,7 +120,6 @@ type GameData = {
   chatterBatchPending: boolean;
   chatterCursor: number;
   nextChatterDisplayAt: number;
-  activeChatterText: string;
   runToken: number;
   runStyle: RunStyle;
   comboMilestones: number[];
@@ -179,22 +179,6 @@ const FALLBACK_POWERUP_BATCHES: PowerupBatch[] = [
   ] },
 ];
 
-const FALLBACK_CHATTER_BATCHES: ChatterBatch[] = [
-  { sentences: [
-    { text: "Please finish the report before tomorrow's deadline.", kind: "office" },
-    { text: "The stand-up meeting starts in five minutes.", kind: "office" },
-    { text: "Keep trying - persistence turns effort into success.", kind: "motivation" },
-    { text: "Who moved my calendar invite again?", kind: "office" },
-  ] },
-  { sentences: [
-    { text: "Can you send the final numbers before lunch?", kind: "office" },
-    { text: "This meeting could have been an email.", kind: "office" },
-    { text: "You are capable of doing excellent work today.", kind: "motivation" },
-    { text: "The printer needs encouragement, not another restart.", kind: "office" },
-    { text: "Remember to update the project tracker.", kind: "office" },
-  ] },
-];
-
 const CONTRACTS: Contract[] = [
   { label: "Land 9 clean back hits", metric: "back", target: 9, reward: 220 },
   { label: "Bait 2 pursuers into carts", metric: "baits", target: 2, reward: 300 },
@@ -213,11 +197,10 @@ const defaultHud = {
   contractProgress: 0, contractTarget: CONTRACTS[0].target, contractDone: false, selectedLane: 1, firstHit: false,
   speedFactor: 1, jumping: false,
   activePowerups: [] as { kind: PowerupKind; remaining: number }[], powerupsQueued: 0, aiPlanning: false,
-  pbDelta: 0, chatterCaption: "",
+  pbDelta: 0,
 };
 
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)); }
-function normalizeChatter(text: string) { return text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
 function todayKey() { return new Date().toISOString().slice(0, 10); }
 function dailyProgress(profile: CareerProfile): DailyProgress {
   const today = todayKey();
@@ -248,7 +231,7 @@ function makeGame(challengeIndex = 0, runStyle: RunStyle = "planner"): GameData 
     speedControl: 0, speedFactor: 1, jumpStartedAt: -10, jumpUntil: -10, jumpCooldownUntil: 0, hitStopUntil: 0,
     scheduledPowerups: [], mapPowerups: [], activePowerups: [], powerStrikes: [], nextPowerupBatchAt: 0,
     powerupBatchPending: false, powerupId: 0, strikeId: 0, nextLaserAt: 0, nextKickAt: 0, lastPowerSoundAt: -10, recentPowerupKinds: [],
-    chatterLines: [], recentChatter: [], nextChatterBatchAt: 0, chatterBatchPending: false, chatterCursor: 0, nextChatterDisplayAt: 0, activeChatterText: "", runToken: Math.random(),
+    chatterLines: [], recentChatter: [], nextChatterBatchAt: 0, chatterBatchPending: false, chatterCursor: 0, nextChatterDisplayAt: 0, runToken: Math.random(),
     runStyle, comboMilestones: [],
   };
 }
@@ -499,22 +482,15 @@ export default function CorporateWarsGame() {
       });
       if (!response.ok) throw new Error("fallback");
       const candidate = await response.json() as ChatterBatch;
-      const seen = new Set(history.map(normalizeChatter));
+      const seen = new Set(history.map((line) => line.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()));
       const valid = Array.isArray(candidate.sentences) && candidate.sentences.length === 7
         && candidate.sentences.every((line) => typeof line.text === "string" && line.text.length >= 8 && line.text.length <= 90 && (line.kind === "office" || line.kind === "motivation"))
         && candidate.sentences.some((line) => line.kind === "motivation")
-        && candidate.sentences.every((line) => { const normalized = normalizeChatter(line.text); if (!normalized || seen.has(normalized)) return false; seen.add(normalized); return true; });
+        && candidate.sentences.every((line) => { const normalized = line.text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); if (!normalized || seen.has(normalized)) return false; seen.add(normalized); return true; });
       if (!valid) throw new Error("invalid chatter");
       batch = candidate;
     } catch {
-      const seen = new Set(history.map(normalizeChatter));
-      const pool = FALLBACK_CHATTER_BATCHES.flatMap((candidate) => candidate.sentences).filter((line) => !seen.has(normalizeChatter(line.text)));
-      const motivation = pool.find((line) => line.kind === "motivation");
-      const office = pool.filter((line) => line.kind === "office");
-      const offset = office.length ? Math.floor(batchStart / CHATTER_INTERVAL_SECONDS) % office.length : 0;
-      const rotated = [...office.slice(offset), ...office.slice(0, offset)];
-      const fresh = motivation ? [motivation, ...rotated.filter((line) => line.text !== motivation.text).slice(0, 6)] : [];
-      batch = fresh.length === 7 ? { sentences: fresh } : null;
+      batch = buildFreshOfficeChatterFallback(history, batchStart);
     } finally {
       clearTimeout(timeout);
     }
@@ -523,7 +499,7 @@ export default function CorporateWarsGame() {
     game.chatterBatchPending = false;
     if (!batch) { game.chatterLines = []; return; }
     game.chatterLines.push(...batch.sentences.filter((line) => line.kind === "motivation"), ...batch.sentences.filter((line) => line.kind === "office"));
-    if (!game.activeChatterText) game.nextChatterDisplayAt = game.elapsed;
+    if (game.chatterCursor >= game.chatterLines.length - batch.sentences.length) game.nextChatterDisplayAt = game.elapsed;
     const nextHistory = [...history, ...batch.sentences.map((line) => line.text)];
     chatterHistoryRef.current = nextHistory;
     game.recentChatter = nextHistory.slice(-300);
@@ -772,15 +748,15 @@ export default function CorporateWarsGame() {
 
         if (game.elapsed >= game.nextChatterDisplayAt) {
           for (const target of game.targets) target.message = undefined;
-          game.activeChatterText = "";
           if (game.chatterCursor < game.chatterLines.length) {
-            const line = game.chatterLines[game.chatterCursor++];
-            const speaker = game.targets
-              .filter((target) => !target.resolved && target.z > -78 && target.z < -10)
-              .sort((a, b) => Math.abs(a.z + 46) - Math.abs(b.z + 46))[0];
-            if (speaker) speaker.message = line.text;
-            game.activeChatterText = line.text;
-            game.nextChatterDisplayAt = game.elapsed + 5;
+            const candidates = game.targets.filter((target) => !target.resolved && target.z > -64 && target.z < -22);
+            if (candidates.length) {
+              const speaker = candidates[Math.floor(Math.random() * candidates.length)];
+              speaker.message = game.chatterLines[game.chatterCursor++].text;
+              game.nextChatterDisplayAt = game.elapsed + 6;
+            } else {
+              game.nextChatterDisplayAt = game.elapsed + 0.25;
+            }
           } else {
             game.nextChatterDisplayAt = game.elapsed + 0.25;
           }
@@ -907,7 +883,7 @@ export default function CorporateWarsGame() {
         const elapsedSeconds = Math.floor(game.elapsed);
         if (game.elapsed - game.lastHud >= 0.08) {
           game.lastHud = game.elapsed;
-          setHud({ score: game.score, combo: game.combo, suspicion: Math.min(100, game.suspicion), time: elapsedSeconds, distance: Math.round(game.runDistance), focus: game.focus, flow, backHits: game.backHits, sideHits: game.sideHits, pursuers: game.pursuers.length, baits: game.chaserBaits, contractLabel: contract.label, contractProgress: Math.min(contract.target, progress), contractTarget: contract.target, contractDone: game.challengeDone, selectedLane: game.selectedLane, firstHit: game.firstHit, speedFactor: game.speedFactor, jumping: jumpProgress > 0, activePowerups: game.activePowerups.map((powerup) => ({ kind: powerup.kind, remaining: Math.max(0, Math.ceil(powerup.endsAt - game.elapsed)) })), powerupsQueued: game.scheduledPowerups.length + game.mapPowerups.length, aiPlanning: game.powerupBatchPending, pbDelta: game.score - best, chatterCaption: game.activeChatterText });
+          setHud({ score: game.score, combo: game.combo, suspicion: Math.min(100, game.suspicion), time: elapsedSeconds, distance: Math.round(game.runDistance), focus: game.focus, flow, backHits: game.backHits, sideHits: game.sideHits, pursuers: game.pursuers.length, baits: game.chaserBaits, contractLabel: contract.label, contractProgress: Math.min(contract.target, progress), contractTarget: contract.target, contractDone: game.challengeDone, selectedLane: game.selectedLane, firstHit: game.firstHit, speedFactor: game.speedFactor, jumping: jumpProgress > 0, activePowerups: game.activePowerups.map((powerup) => ({ kind: powerup.kind, remaining: Math.max(0, Math.ceil(powerup.endsAt - game.elapsed)) })), powerupsQueued: game.scheduledPowerups.length + game.mapPowerups.length, aiPlanning: game.powerupBatchPending, pbDelta: game.score - best });
         }
         if (game.suspicion >= 100) finishGame();
       }
@@ -964,7 +940,6 @@ export default function CorporateWarsGame() {
           <span className="powerup-planner">AI DROP {hud.aiPlanning ? "PLANNING" : `${hud.powerupsQueued} QUEUED`}</span>
           <div>{hud.activePowerups.length ? hud.activePowerups.map((powerup) => <b key={powerup.kind} className={`power-${powerup.kind}`}>{POWERUP_LABELS[powerup.kind]} <i>{powerup.remaining}s</i></b>) : <em>Collect a glowing prototype</em>}</div>
         </div>
-        {hud.chatterCaption && <div key={hud.chatterCaption} className="office-caption" role="status"><span>OFFICE CHATTER</span><b>{hud.chatterCaption}</b></div>}
         {feedback && <div className={`skill-feedback ${feedback.kind}`}>{feedback.text}</div>}
         {!hud.firstHit && <div className="first-prompt"><kbd>← →</kbd> line up while they are far away <span>· late cuts cause a chase</span></div>}
         <div className="lane-hints" aria-hidden="true">{[1, 2, 3].map((number) => <span key={number} className={hud.selectedLane === number - 1 ? "active" : ""}>{number}</span>)}</div>

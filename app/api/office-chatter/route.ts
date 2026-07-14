@@ -1,3 +1,5 @@
+import { buildFreshOfficeChatterFallback } from "../../lib/officeChatterFallback";
+
 type ChatterKind = "office" | "motivation";
 type ChatterLine = { text: string; kind: ChatterKind };
 type ChatterBatch = { sentences: ChatterLine[] };
@@ -27,9 +29,6 @@ function cleanBatch(value: unknown, recentLines: string[]): ChatterBatch | null 
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return Response.json({ error: "Office chatter is using local fallback lines." }, { status: 503 });
-
   let context: { elapsedSec: number; score: number; recentLines: string[] };
   try {
     const input = await request.json() as { elapsedSec?: number; score?: number; recentLines?: unknown };
@@ -40,6 +39,14 @@ export async function POST(request: Request) {
     };
   } catch {
     return Response.json({ error: "Invalid chatter context." }, { status: 400 });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    const fallback = buildFreshOfficeChatterFallback(context.recentLines, context.elapsedSec);
+    return fallback
+      ? Response.json(fallback, { headers: { "Cache-Control": "no-store", "X-Chatter-Source": "fallback" } })
+      : Response.json({ error: "Office chatter fallback exhausted." }, { status: 503 });
   }
 
   const controller = new AbortController();
@@ -90,15 +97,25 @@ export async function POST(request: Request) {
         },
       }),
     });
-    if (!response.ok) return Response.json({ error: "Office chatter provider unavailable." }, { status: 502 });
+    if (!response.ok) {
+      const fallback = buildFreshOfficeChatterFallback(context.recentLines, context.elapsedSec);
+      return fallback ? Response.json(fallback, { headers: { "Cache-Control": "no-store", "X-Chatter-Source": "fallback" } }) : Response.json({ error: "Office chatter provider unavailable." }, { status: 502 });
+    }
     const payload = await response.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
     const content = payload.candidates?.[0]?.content?.parts?.find((part) => typeof part.text === "string")?.text;
-    if (!content) return Response.json({ error: "Empty office chatter response." }, { status: 502 });
+    if (!content) {
+      const fallback = buildFreshOfficeChatterFallback(context.recentLines, context.elapsedSec);
+      return fallback ? Response.json(fallback, { headers: { "Cache-Control": "no-store", "X-Chatter-Source": "fallback" } }) : Response.json({ error: "Empty office chatter response." }, { status: 502 });
+    }
     const batch = cleanBatch(JSON.parse(content), context.recentLines);
-    if (!batch) return Response.json({ error: "Invalid office chatter batch." }, { status: 502 });
+    if (!batch) {
+      const fallback = buildFreshOfficeChatterFallback(context.recentLines, context.elapsedSec);
+      return fallback ? Response.json(fallback, { headers: { "Cache-Control": "no-store", "X-Chatter-Source": "fallback" } }) : Response.json({ error: "Invalid office chatter batch." }, { status: 502 });
+    }
     return Response.json(batch, { headers: { "Cache-Control": "no-store" } });
   } catch {
-    return Response.json({ error: "Office chatter planning timed out." }, { status: 504 });
+    const fallback = buildFreshOfficeChatterFallback(context.recentLines, context.elapsedSec);
+    return fallback ? Response.json(fallback, { headers: { "Cache-Control": "no-store", "X-Chatter-Source": "fallback" } }) : Response.json({ error: "Office chatter planning timed out." }, { status: 504 });
   } finally {
     clearTimeout(timeout);
   }
