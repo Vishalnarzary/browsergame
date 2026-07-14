@@ -10,6 +10,7 @@ export type SceneTarget = {
   color: string;
   suit: string;
   role: string;
+  message?: string;
   activity: OfficeActivity;
   seed: number;
   hitMode?: "back" | "side";
@@ -48,6 +49,7 @@ type Rig = THREE.Group & {
     leftLeg: THREE.Group;
     rightLeg: THREE.Group;
     torso: THREE.Mesh;
+    head: THREE.Mesh;
     rightHand: THREE.Mesh;
     activity?: OfficeActivity;
     seed?: number;
@@ -115,6 +117,33 @@ function addRoleLabel(group: THREE.Group, label: string, color: number) {
   labelSprite.renderOrder = 30;
   labelSprite.userData.roleLabel = true;
   group.add(labelSprite);
+}
+
+function speechTexture(message: string) {
+  const canvas = document.createElement("canvas"); canvas.width = 1024; canvas.height = 300;
+  const context = canvas.getContext("2d")!;
+  context.fillStyle = "rgba(255,255,255,.97)";
+  context.beginPath(); context.roundRect(18, 18, 988, 250, 45); context.fill();
+  context.fillStyle = "rgba(255,255,255,.97)";
+  context.beginPath(); context.moveTo(470, 265); context.lineTo(520, 298); context.lineTo(555, 265); context.fill();
+  context.strokeStyle = "rgba(6,15,23,.9)"; context.lineWidth = 12; context.lineJoin = "round";
+  context.beginPath(); context.roundRect(18, 18, 988, 250, 45); context.stroke();
+  context.fillStyle = "#09131b"; context.font = "900 54px Arial"; context.textAlign = "center"; context.textBaseline = "middle";
+  const words = message.split(/\s+/); const lines: string[] = []; let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (context.measureText(candidate).width > 870 && current) { lines.push(current); current = word; } else current = candidate;
+  }
+  if (current) lines.push(current);
+  const visibleLines = lines.slice(0, 3); const startY = 143 - (visibleLines.length - 1) * 38;
+  visibleLines.forEach((line, index) => context.fillText(line, 512, startY + index * 76));
+  const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = 4; return texture;
+}
+
+function addSpeechBubble(group: THREE.Group, message?: string) {
+  if (!message) return;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: speechTexture(message), transparent: true, depthTest: false, depthWrite: false }));
+  sprite.position.set(0, 5.25, 0); sprite.scale.set(6.2, 1.82, 1); sprite.renderOrder = 31; sprite.userData.speechBubble = true; group.add(sprite);
 }
 
 function createPerson(bodyColor: number, accentColor: number, runner = false, roleLabel = ""): Rig {
@@ -192,7 +221,7 @@ function createPerson(bodyColor: number, accentColor: number, runner = false, ro
 
   addRoleLabel(group, roleLabel, bodyColor);
 
-  group.userData = { leftArm, rightArm, leftLeg, rightLeg, torso, rightHand };
+  group.userData = { leftArm, rightArm, leftLeg, rightLeg, torso, head, rightHand };
   return group;
 }
 
@@ -238,13 +267,6 @@ function createActivityScene(activity: OfficeActivity, bodyColor: number, suitCo
   if (activity === "chatting") {
     primary.position.set(0, 0, 0.25);
     primary.rotation.y = 0;
-    const mateA = createPerson(0xe7b956, 0x426a7d, false, "COLLEAGUE");
-    mateA.scale.setScalar(0.88);
-    mateA.position.set(-1.15, 0, -0.38);
-    mateA.rotation.y = -0.65;
-    mateA.userData.activity = "chatting";
-    mateA.userData.seed = seed + 1.4;
-    group.add(mateA);
   } else if (activity === "phone") {
     const phone = mesh(new THREE.BoxGeometry(0.16, 0.32, 0.06), new THREE.MeshStandardMaterial({ color: 0x05090e }));
     phone.position.set(0.46, 2.72, -0.22);
@@ -307,6 +329,31 @@ function updateRoleLabels(root: THREE.Object3D, z: number, visible = true) {
       object.visible = visible;
       object.scale.set(2.9 * distanceScale, 0.9 * distanceScale, 1);
     }
+    if (object instanceof THREE.Sprite && object.userData.speechBubble) {
+      object.visible = visible;
+      const bubbleScale = 1 + (distanceScale - 1) * 0.62;
+      object.scale.set(6.2 * bubbleScale, 1.82 * bubbleScale, 1);
+    }
+  });
+}
+
+function enragePursuer(rig: Rig) {
+  rig.userData.head.material = new THREE.MeshStandardMaterial({ color: 0xff3028, emissive: 0x9b0800, emissiveIntensity: 1.35, roughness: 0.58 });
+  const glow = mesh(new THREE.SphereGeometry(0.43, 18, 14), new THREE.MeshBasicMaterial({ color: 0xff382b, transparent: true, opacity: 0.2, depthWrite: false }), false);
+  glow.scale.set(0.94, 1.1, 0.98); glow.position.y = 3.18; glow.userData.angerGlow = true; rig.add(glow);
+  for (let index = 0; index < 7; index++) {
+    const steam = mesh(new THREE.SphereGeometry(0.11 + (index % 3) * 0.035, 9, 7), new THREE.MeshBasicMaterial({ color: index % 2 ? 0xff6b38 : 0xffd2c4, transparent: true, opacity: 0.7, depthWrite: false }), false);
+    steam.userData.steamPhase = index / 7; rig.add(steam);
+  }
+}
+
+function animateAngerSteam(rig: Rig, time: number) {
+  rig.traverse((object) => {
+    if (!(object instanceof THREE.Mesh) || object.userData.steamPhase === undefined) return;
+    const life = (time * 0.72 + object.userData.steamPhase) % 1;
+    object.position.set(Math.sin(time * 5 + object.userData.steamPhase * 13) * (0.18 + life * 0.38), 3.58 + life * 2.05, Math.cos(time * 4 + object.userData.steamPhase * 9) * 0.2);
+    object.scale.setScalar(0.72 + life * 1.9);
+    (object.material as THREE.MeshBasicMaterial).opacity = (1 - life) * 0.72;
   });
 }
 
@@ -437,6 +484,7 @@ export class OfficeRunner3D {
 
   private makeTarget(target: SceneTarget) {
     const scene = createActivityScene(target.activity, Number.parseInt(target.color.slice(1), 16), Number.parseInt(target.suit.slice(1), 16), target.seed, target.role);
+    addSpeechBubble(scene, target.message);
     // Employees face toward the incoming runner, opposite the hero's -Z direction.
     scene.rotation.y = Math.PI;
     return scene;
@@ -719,12 +767,14 @@ export class OfficeRunner3D {
         object.scale.setScalar(0.98);
         object.rotation.y = 0;
         object.userData.seed = pursuer.seed;
+        enragePursuer(object);
         this.pursuerMeshes.set(pursuer.id, object);
         this.scene.add(object);
       }
       object.position.x = LANES[0] + (LANES[2] - LANES[0]) * (pursuer.lane / 2);
       object.position.z = 5 + pursuer.gap;
       animateRig(object, this.clock + pursuer.seed, true);
+      animateAngerSteam(object, this.clock + pursuer.seed);
       updateRoleLabels(object, object.position.z);
     }
 

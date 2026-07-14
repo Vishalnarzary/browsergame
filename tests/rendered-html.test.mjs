@@ -26,11 +26,12 @@ test("server-renders the finished game shell", async () => {
 });
 
 test("ships the strategic 3D loop and keeps the Groq key server-side", async () => {
-  const [game, scene, route, powerupRoute, envExample] = await Promise.all([
+  const [game, scene, route, powerupRoute, chatterRoute, envExample] = await Promise.all([
     readFile(new URL("../app/components/CorporateWarsGame.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/OfficeRunner3D.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/novelty-event/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/powerup-batch/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/office-chatter/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../.env.example", import.meta.url), "utf8"),
   ]);
   assert.match(game, /const RUN_SECONDS = 100/);
@@ -79,6 +80,10 @@ test("ships the strategic 3D loop and keeps the Groq key server-side", async () 
   assert.match(game, /clone/);
   assert.match(game, /powerLanes/);
   assert.match(game, /AI DROP/);
+  assert.match(game, /fetchChatterBatch/);
+  assert.match(game, /nextChatterBatchAt \+= 60/);
+  assert.match(game, /FALLBACK_CHATTER_BATCHES/);
+  assert.match(game, /Math\.random\(\) < 0\.38/);
   assert.match(scene, /"desk" \| "chatting" \| "phone" \| "presenting"/);
   assert.match(scene, /new THREE\.WebGLRenderer/);
   assert.match(scene, /new THREE\.PerspectiveCamera/);
@@ -99,6 +104,12 @@ test("ships the strategic 3D loop and keeps the Groq key server-side", async () 
   assert.match(scene, /backed = false/);
   assert.match(scene, /true, ""/);
   assert.doesNotMatch(scene, /mateB/);
+  assert.doesNotMatch(scene, /\bmateA\b/);
+  assert.match(scene, /addSpeechBubble/);
+  assert.match(scene, /speechTexture/);
+  assert.match(scene, /enragePursuer/);
+  assert.match(scene, /animateAngerSteam/);
+  assert.match(scene, /0xff3028/);
   assert.match(scene, /roleTexture/);
   assert.match(scene, /new THREE\.CapsuleGeometry/);
   assert.match(scene, /new THREE\.SphereGeometry/);
@@ -113,6 +124,11 @@ test("ships the strategic 3D loop and keeps the Groq key server-side", async () 
   assert.match(powerupRoute, /strict: true/);
   assert.match(powerupRoute, /maxItems: 4/);
   assert.match(powerupRoute, /additionalProperties: false/);
+  assert.match(chatterRoute, /process\.env\.GROQ_API_KEY/);
+  assert.match(chatterRoute, /minItems: 3/);
+  assert.match(chatterRoute, /maxItems: 5/);
+  assert.match(chatterRoute, /"motivation"/);
+  assert.match(chatterRoute, /strict: true/);
   assert.doesNotMatch(game, /GROQ_API_KEY|NEXT_PUBLIC/);
   assert.doesNotMatch(envExample, /NEXT_PUBLIC_GROQ/);
 });
@@ -133,6 +149,16 @@ test("powerup planner fails fast without a secret so scheduled fallback drops st
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ score: 100, elapsedSec: 0, difficultyTier: 1, activePowerups: [], recentKinds: [] }),
+  }), env, context);
+  assert.equal(response.status, 503);
+});
+
+test("office chatter planner fails fast without a secret so fallback lines stay available", async () => {
+  const worker = await loadWorker();
+  const response = await worker.fetch(new Request("http://localhost/api/office-chatter", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ score: 100, elapsedSec: 0, recentLines: [] }),
   }), env, context);
   assert.equal(response.status, 503);
 });

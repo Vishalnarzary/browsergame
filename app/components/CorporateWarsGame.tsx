@@ -17,6 +17,7 @@ type Target = {
   seed: number;
   activity: OfficeActivity;
   cleanLine: boolean;
+  message?: string;
   alignedAtZ?: number;
   resolved: boolean;
   hitMode?: "back" | "side";
@@ -34,6 +35,8 @@ type RunnerItem = {
 };
 
 type Pursuer = { id: number; lane: number; gap: number; reaction: number; seed: number; type: TargetType };
+type ChatterLine = { text: string; kind: "office" | "motivation" };
+type ChatterBatch = { sentences: ChatterLine[] };
 type PowerupSpec = { kind: PowerupKind; lane: number; spawn_offset_sec: number; pickup_window_sec: number; active_duration_sec: number; rarity: "common" | "rare" | "legendary" };
 type PowerupBatch = { batch_flavor: string; powerups: PowerupSpec[] };
 type ScheduledPowerup = PowerupSpec & { id: number; spawnAt: number };
@@ -108,6 +111,11 @@ type GameData = {
   nextKickAt: number;
   lastPowerSoundAt: number;
   recentPowerupKinds: PowerupKind[];
+  chatterLines: ChatterLine[];
+  recentChatter: string[];
+  nextChatterBatchAt: number;
+  chatterBatchPending: boolean;
+  chatterCursor: number;
   runToken: number;
 };
 
@@ -156,6 +164,22 @@ const FALLBACK_POWERUP_BATCHES: PowerupBatch[] = [
   ] },
 ];
 
+const FALLBACK_CHATTER_BATCHES: ChatterBatch[] = [
+  { sentences: [
+    { text: "Please finish the report before tomorrow's deadline.", kind: "office" },
+    { text: "The stand-up meeting starts in five minutes.", kind: "office" },
+    { text: "Keep trying - persistence turns effort into success.", kind: "motivation" },
+    { text: "Who moved my calendar invite again?", kind: "office" },
+  ] },
+  { sentences: [
+    { text: "Can you send the final numbers before lunch?", kind: "office" },
+    { text: "This meeting could have been an email.", kind: "office" },
+    { text: "You are capable of doing excellent work today.", kind: "motivation" },
+    { text: "The printer needs encouragement, not another restart.", kind: "office" },
+    { text: "Remember to update the project tracker.", kind: "office" },
+  ] },
+];
+
 const CONTRACTS: Contract[] = [
   { label: "Land 9 clean back hits", metric: "back", target: 9, reward: 220 },
   { label: "Bait 2 pursuers into carts", metric: "baits", target: 2, reward: 300 },
@@ -201,7 +225,8 @@ function makeGame(challengeIndex = 0): GameData {
     sideHits: 0, chaserBaits: 0, dodges: 0, slaps: 0, flowActivations: 0, challengeIndex, challengeDone: false, recentEvents: [],
     speedControl: 0, speedFactor: 1, jumpStartedAt: -10, jumpUntil: -10, jumpCooldownUntil: 0, hitStopUntil: 0,
     scheduledPowerups: [], mapPowerups: [], activePowerups: [], powerStrikes: [], nextPowerupBatchAt: 0,
-    powerupBatchPending: false, powerupId: 0, strikeId: 0, nextLaserAt: 0, nextKickAt: 0, lastPowerSoundAt: -10, recentPowerupKinds: [], runToken: Math.random(),
+    powerupBatchPending: false, powerupId: 0, strikeId: 0, nextLaserAt: 0, nextKickAt: 0, lastPowerSoundAt: -10, recentPowerupKinds: [],
+    chatterLines: [], recentChatter: [], nextChatterBatchAt: 0, chatterBatchPending: false, chatterCursor: 0, runToken: Math.random(),
   };
 }
 
@@ -417,13 +442,46 @@ export default function CorporateWarsGame() {
     tone(470, 0.2, "triangle", 0.045, 250);
   }, [showFeedback, tone]);
 
+  const fetchChatterBatch = useCallback(async (minuteStart: number, runToken: number) => {
+    const snapshot = gameRef.current;
+    let batch: ChatterBatch | null = null;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4500);
+    try {
+      const response = await fetch("/api/office-chatter", {
+        method: "POST", headers: { "content-type": "application/json" }, signal: controller.signal,
+        body: JSON.stringify({ score: snapshot.score, elapsedSec: Math.round(snapshot.elapsed), recentLines: snapshot.recentChatter }),
+      });
+      if (!response.ok) throw new Error("fallback");
+      const candidate = await response.json() as ChatterBatch;
+      const valid = Array.isArray(candidate.sentences) && candidate.sentences.length >= 3 && candidate.sentences.length <= 5
+        && candidate.sentences.every((line) => typeof line.text === "string" && line.text.length >= 8 && line.text.length <= 90 && (line.kind === "office" || line.kind === "motivation"))
+        && candidate.sentences.some((line) => line.kind === "motivation");
+      if (!valid) throw new Error("invalid chatter");
+      batch = candidate;
+    } catch {
+      batch = FALLBACK_CHATTER_BATCHES[Math.floor(minuteStart / 60) % FALLBACK_CHATTER_BATCHES.length];
+    } finally {
+      clearTimeout(timeout);
+    }
+    const game = gameRef.current;
+    if (game.runToken !== runToken || !batch) return;
+    game.chatterLines = [...batch.sentences.filter((line) => line.kind === "motivation"), ...batch.sentences.filter((line) => line.kind === "office")];
+    game.chatterCursor = 0;
+    game.recentChatter = [...game.recentChatter, ...batch.sentences.map((line) => line.text)].slice(-10);
+    game.chatterBatchPending = false;
+  }, []);
+
   const spawnTarget = useCallback((lane?: number, z?: number, forcedType?: TargetType, activity?: OfficeActivity) => {
     const game = gameRef.current;
     const targetLane = lane ?? Math.floor(Math.random() * 3);
+    const showChatter = game.chatterLines.length > 0 && Math.random() < 0.38;
+    const chatter = showChatter ? game.chatterLines[game.chatterCursor++ % game.chatterLines.length] : undefined;
     game.targets.push({
       id: ++game.targetId, lane: targetLane, type: forcedType ?? chooseType(game.elapsed, game.activeEvent),
       z: z ?? -78 - Math.random() * 24, seed: Math.random() * 9, activity: activity ?? randomActivity(),
       cleanLine: game.selectedLane === targetLane, alignedAtZ: game.selectedLane === targetLane ? (z ?? -78) : undefined,
+      message: chatter?.text,
       resolved: false,
     });
   }, []);
@@ -600,6 +658,12 @@ export default function CorporateWarsGame() {
           game.powerupBatchPending = true;
           void fetchPowerupBatch(minuteStart, game.runToken);
         }
+        if (game.elapsed >= game.nextChatterBatchAt && !game.chatterBatchPending) {
+          const minuteStart = game.nextChatterBatchAt;
+          game.nextChatterBatchAt += 60;
+          game.chatterBatchPending = true;
+          void fetchChatterBatch(minuteStart, game.runToken);
+        }
         game.activePowerups = game.activePowerups.filter((powerup) => powerup.endsAt > game.elapsed);
         const arriving = game.scheduledPowerups.filter((powerup) => powerup.spawnAt <= game.elapsed);
         game.scheduledPowerups = game.scheduledPowerups.filter((powerup) => powerup.spawnAt > game.elapsed);
@@ -756,7 +820,7 @@ export default function CorporateWarsGame() {
         slapPulse: clamp((game.slapUntil - game.elapsed) / 0.42, 0, 1), jumpProgress: game.elapsed < game.jumpUntil ? clamp((game.elapsed - game.jumpStartedAt) / 0.94, 0, 1) : 0,
         speedFactor: game.speedFactor, flow: game.elapsed < game.flowUntil,
         stumble: game.elapsed < game.stumbleUntil,
-        targets: game.targets.map((target) => ({ id: target.id, lane: target.lane, z: target.z, color: TARGETS[target.type].color, suit: TARGETS[target.type].suit, role: target.type.toUpperCase(), activity: target.activity, seed: target.seed, hitMode: target.hitMode, hitOutcome: target.hitOutcome, hitAge: target.hitAt === undefined ? undefined : game.elapsed - target.hitAt })),
+        targets: game.targets.map((target) => ({ id: target.id, lane: target.lane, z: target.z, color: TARGETS[target.type].color, suit: TARGETS[target.type].suit, role: target.type.toUpperCase(), message: target.message, activity: target.activity, seed: target.seed, hitMode: target.hitMode, hitOutcome: target.hitOutcome, hitAge: target.hitAt === undefined ? undefined : game.elapsed - target.hitAt })),
         items: game.items.map((item) => ({ id: item.id, lane: item.lane, z: item.z, type: item.type })),
         pursuers: game.pursuers.map((pursuer) => ({ ...pursuer, role: pursuer.type.toUpperCase(), color: TARGETS[pursuer.type].color, suit: TARGETS[pursuer.type].suit })),
         powerups: game.mapPowerups.map((powerup) => ({ id: powerup.id, lane: powerup.lane, z: powerup.z, kind: powerup.kind, rarity: powerup.rarity })),
@@ -768,7 +832,7 @@ export default function CorporateWarsGame() {
     };
     animation = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(animation);
-  }, [displayEvent, fetchNovelty, fetchPowerupBatch, finishGame, playSlapImpact, resolvePowerHit, resolveSlap, showFeedback, spawnItem, spawnTarget, spawnWave, tone]);
+  }, [displayEvent, fetchChatterBatch, fetchNovelty, fetchPowerupBatch, finishGame, playSlapImpact, resolvePowerHit, resolveSlap, showFeedback, spawnItem, spawnTarget, spawnWave, tone]);
 
   const onCanvasClick = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
