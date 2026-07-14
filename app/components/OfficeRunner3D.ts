@@ -81,31 +81,35 @@ function limb(material: THREE.Material, length: number, radius: number) {
 
 function roleTexture(label: string, color: number) {
   const canvas = document.createElement("canvas");
-  canvas.width = 384; canvas.height = 128;
+  canvas.width = 512; canvas.height = 160;
   const context = canvas.getContext("2d")!;
-  context.fillStyle = "#f8fff8";
-  context.fillRect(6, 6, 372, 116);
+  context.shadowColor = "rgba(0,0,0,.48)";
+  context.shadowBlur = 18;
+  context.fillStyle = "rgba(5,15,23,.96)";
+  context.beginPath(); context.roundRect(10, 10, 492, 140, 34); context.fill();
+  context.shadowBlur = 0;
   context.strokeStyle = `#${color.toString(16).padStart(6, "0")}`;
-  context.lineWidth = 12; context.stroke();
-  context.fillStyle = "#10212a";
-  const size = label.length > 9 ? 43 : label.length > 6 ? 50 : 62;
+  context.lineWidth = 10; context.stroke();
+  context.fillStyle = "#ffffff";
+  const size = label.length > 9 ? 60 : label.length > 6 ? 70 : 82;
   context.font = `900 ${size}px Arial`;
   context.textAlign = "center"; context.textBaseline = "middle";
-  context.fillText(label, 192, 68);
+  context.fillText(label, 256, 84);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
   return texture;
 }
 
-function addRolePatch(group: THREE.Group, label: string, color: number) {
+function addRoleLabel(group: THREE.Group, label: string, color: number) {
   if (!label) return;
-  const material = new THREE.MeshBasicMaterial({ map: roleTexture(label, color), transparent: true, side: THREE.DoubleSide, depthWrite: false });
-  const back = mesh(new THREE.PlaneGeometry(0.98, 0.36), material, false);
-  back.position.set(0, 2.28, 0.365);
-  const front = mesh(new THREE.PlaneGeometry(0.98, 0.36), material, false);
-  front.position.set(0, 2.28, -0.365); front.rotation.y = Math.PI;
-  group.add(back, front);
+  const material = new THREE.SpriteMaterial({ map: roleTexture(label, color), transparent: true, depthTest: false, depthWrite: false });
+  const labelSprite = new THREE.Sprite(material);
+  labelSprite.position.set(0, 4.12, 0);
+  labelSprite.scale.set(2.9, 0.9, 1);
+  labelSprite.renderOrder = 30;
+  labelSprite.userData.roleLabel = true;
+  group.add(labelSprite);
 }
 
 function createPerson(bodyColor: number, accentColor: number, runner = false, roleLabel = ""): Rig {
@@ -181,7 +185,7 @@ function createPerson(bodyColor: number, accentColor: number, runner = false, ro
   leftLeg.add(leftShoe);
   rightLeg.add(rightShoe);
 
-  addRolePatch(group, roleLabel, bodyColor);
+  addRoleLabel(group, roleLabel, bodyColor);
 
   group.userData = { leftArm, rightArm, leftLeg, rightLeg, torso, rightHand };
   return group;
@@ -288,6 +292,13 @@ function animateRig(rig: Rig, time: number, runner: boolean, slapPulse = 0) {
 function walkRigs(root: THREE.Object3D, callback: (rig: Rig) => void) {
   root.traverse((object) => {
     if (object.userData?.leftArm && object.userData?.rightLeg) callback(object as Rig);
+  });
+}
+
+function updateRoleLabels(root: THREE.Object3D, z: number) {
+  const distanceScale = 1 + THREE.MathUtils.clamp((-z - 8) / 70, 0, 1) * 1.3;
+  root.traverse((object) => {
+    if (object instanceof THREE.Sprite && object.userData.roleLabel) object.scale.set(2.9 * distanceScale, 0.9 * distanceScale, 1);
   });
 }
 
@@ -591,6 +602,7 @@ export class OfficeRunner3D {
         object.position.x += (target.hitMode === "side" ? 1 : -1) * age * 2.2;
       }
       walkRigs(object, (rig) => animateRig(rig, this.clock, false));
+      updateRoleLabels(object, target.z);
     }
 
     const hitTargets = frame.targets.filter((target) => target.hitMode && target.hitAge !== undefined);
@@ -661,6 +673,7 @@ export class OfficeRunner3D {
       object.position.x = LANES[0] + (LANES[2] - LANES[0]) * (pursuer.lane / 2);
       object.position.z = 5 + pursuer.gap;
       animateRig(object, this.clock + pursuer.seed, true);
+      updateRoleLabels(object, object.position.z);
     }
 
     const cameraTargetX = (LANES[frame.targetLane] ?? 0) * 0.09;

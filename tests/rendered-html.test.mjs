@@ -57,6 +57,8 @@ test("ships the strategic 3D loop and keeps the Groq key server-side", async () 
   assert.match(game, /ArrowLeft/);
   assert.match(game, /KeyW/);
   assert.match(game, /KeyS/);
+  assert.match(game, /game\.speedFactor >= 1\.12/);
+  assert.match(game, /PURSUER OUTRUN/);
   assert.match(game, /triggerJump/);
   assert.match(game, /TABLE VAULT/);
   assert.match(game, /hitStopUntil/);
@@ -76,7 +78,9 @@ test("ships the strategic 3D loop and keeps the Groq key server-side", async () 
   assert.match(scene, /makeImpact/);
   assert.match(scene, /speedMarkers/);
   assert.match(scene, /scene\.rotation\.y = Math\.PI/);
-  assert.match(scene, /new THREE\.PlaneGeometry\(0\.98, 0\.36\)/);
+  assert.match(scene, /new THREE\.SpriteMaterial/);
+  assert.match(scene, /updateRoleLabels/);
+  assert.match(scene, /depthTest: false/);
   assert.match(scene, /roleTexture/);
   assert.match(scene, /new THREE\.CapsuleGeometry/);
   assert.match(scene, /new THREE\.SphereGeometry/);

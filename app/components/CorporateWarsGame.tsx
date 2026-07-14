@@ -565,7 +565,10 @@ export default function CorporateWarsGame() {
         for (const pursuer of game.pursuers) {
           pursuer.reaction -= dt;
           if (pursuer.reaction <= 0) pursuer.lane += (game.playerLane - pursuer.lane) * Math.min(1, dt * 1.65);
-          pursuer.gap -= dt * (0.58 + game.elapsed * 0.0035 + (game.combo > 4 ? 0.12 : 0));
+          const closingRate = game.speedFactor >= 1.12
+            ? -(0.76 + (game.speedFactor - 1.12) * 1.6)
+            : 0.52 + (1 - game.speedFactor) * 1.25 + game.elapsed * 0.0035 + (game.combo > 4 ? 0.12 : 0);
+          pursuer.gap -= dt * closingRate;
         }
 
         const poweredLanes = powerLanes(game);
@@ -627,7 +630,9 @@ export default function CorporateWarsGame() {
           }
         }
 
-        const caught = game.pursuers.find((pursuer) => pursuer.gap < 0.86 && Math.abs(pursuer.lane - game.playerLane) < 0.3);
+        const caught = game.speedFactor < 1.12
+          ? game.pursuers.find((pursuer) => pursuer.gap < 0.86 && Math.abs(pursuer.lane - game.playerLane) < 0.3)
+          : undefined;
         if (caught) {
           game.pursuers = game.pursuers.filter((pursuer) => pursuer.id !== caught.id);
           if (hasPowerup(game, "phase")) {
@@ -660,7 +665,12 @@ export default function CorporateWarsGame() {
 
         game.targets = game.targets.filter((target) => target.resolved ? Boolean(target.hitAt !== undefined && game.elapsed - target.hitAt < 0.48) : target.z < 9);
         game.items = game.items.filter((item) => !item.resolved && item.z < 15);
-        game.pursuers = game.pursuers.filter((pursuer) => pursuer.gap < 8);
+        const outrun = game.pursuers.filter((pursuer) => pursuer.gap >= 8);
+        if (outrun.length) {
+          game.pursuers = game.pursuers.filter((pursuer) => pursuer.gap < 8);
+          game.score += outrun.length * 75; game.focus = Math.min(100, game.focus + outrun.length * 10);
+          showFeedback(`PURSUER OUTRUN  +${outrun.length * 75}`, "clean"); tone(430, 0.2, "triangle", 0.045, 240);
+        }
         game.powerStrikes = game.powerStrikes.filter((strike) => game.elapsed - strike.bornAt < 0.52);
         const remaining = Math.max(0, RUN_SECONDS - game.elapsed);
         if (game.elapsed - game.lastHud >= 0.08) {
