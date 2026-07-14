@@ -193,6 +193,26 @@ button:focus-visible { outline: 3px solid var(--mint); outline-offset: 4px; }
 .rarity-rare { border-left-color: var(--yellow); }
 .rarity-legendary { border-left-color: #c998ff; box-shadow: 0 16px 45px rgba(0,0,0,.4), 0 0 40px rgba(201,152,255,.2); }
 
+.contract-strip {
+  position: absolute;
+  z-index: 14;
+  top: 112px;
+  left: 18px;
+  width: min(290px, 31vw);
+  padding: 9px 56px 9px 12px;
+  border: 1px solid rgba(255,215,94,.3);
+  border-left: 4px solid var(--yellow);
+  border-radius: 8px;
+  background: rgba(6,15,23,.83);
+  box-shadow: 0 10px 28px rgba(0,0,0,.26);
+  pointer-events: none;
+}
+.contract-strip span { display: block; color: var(--yellow); font-size: 7px; font-weight: 900; letter-spacing: .2em; }
+.contract-strip b { display: block; margin-top: 2px; overflow: hidden; color: #fff; font-size: 10px; white-space: nowrap; text-overflow: ellipsis; }
+.contract-strip > i { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: rgba(255,255,255,.65); font: normal 900 9px ui-monospace, monospace; }
+.contract-strip.done { border-color: rgba(111,255,211,.42); border-left-color: var(--mint); }
+.contract-strip.done span, .contract-strip.done > i { color: var(--mint); }
+
 .first-prompt {
   position: absolute;
   z-index: 13;
@@ -267,8 +287,6 @@ kbd {
   touch-action: manipulation;
 }
 .runner-controls button:hover { transform: translateY(-2px); border-color: rgba(111,255,211,.55); color: var(--mint); }
-.runner-controls .slap-control { width: 82px; color: #08131c; background: var(--coral); border-color: #ff9c91; font: 900 12px "Arial Black", Arial, sans-serif; box-shadow: 0 6px 0 #8c2f35, 0 12px 27px rgba(0,0,0,.34); }
-.runner-controls .slap-control:active { transform: translateY(5px); box-shadow: 0 1px 0 #8c2f35; }
 
 .screen-overlay {
   position: absolute;
@@ -343,6 +361,13 @@ kbd {
 .skill-note { margin-top: 14px; padding: 12px; border: 1px dashed rgba(16,33,42,.3); background: rgba(111,255,211,.12); }
 .skill-note b { display: block; margin-bottom: 4px; font-size: 8px; letter-spacing: .17em; }
 .skill-note span { display: block; color: rgba(16,33,42,.72); font-size: 10px; line-height: 1.4; }
+.career-progress { margin-top: 13px; padding: 11px 0 2px; border-top: 1px solid rgba(16,33,42,.18); }
+.career-progress > div:first-child { display: flex; justify-content: space-between; align-items: center; }
+.career-progress span { font-size: 8px; font-weight: 900; letter-spacing: .16em; }
+.career-progress b { color: #8b2f46; font-size: 10px; letter-spacing: .08em; }
+.career-meter { height: 7px; margin: 7px 0 5px; overflow: hidden; border-radius: 99px; background: rgba(16,33,42,.14); }
+.career-meter i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #ff6f61, #ffd75e); }
+.career-progress small { color: rgba(16,33,42,.58); font-size: 7px; font-weight: 900; letter-spacing: .12em; }
 
 .pause-screen, .summary-screen { place-items: center; padding: 30px; background: rgba(4,11,18,.84); backdrop-filter: blur(8px); }
 .pause-card, .summary-card { width: min(560px, 100%); padding: clamp(29px, 5vw, 58px); text-align: center; border: 1px solid rgba(111,255,211,.24); border-radius: 18px; background: linear-gradient(145deg, rgba(15,29,42,.96), rgba(5,13,21,.98)); box-shadow: 0 28px 90px rgba(0,0,0,.5); }
@@ -353,6 +378,9 @@ kbd {
 
 .summary-card { transform: rotate(-.5deg); }
 .new-record { display: inline-block; margin: 7px 0 12px; padding: 7px 12px; color: #211708; background: var(--yellow); font-size: 9px; font-weight: 900; letter-spacing: .16em; transform: rotate(-2deg); }
+.run-rewards { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: -5px 0 14px; }
+.run-rewards b, .run-rewards span { padding: 6px 8px; border: 1px solid rgba(111,255,211,.25); border-radius: 5px; color: var(--mint); background: rgba(111,255,211,.08); font-size: 8px; letter-spacing: .1em; }
+.run-rewards span { color: var(--yellow); border-color: rgba(255,215,94,.28); background: rgba(255,215,94,.07); }
 .final-score { margin: 18px 0; padding: 17px; border-block: 1px solid rgba(255,255,255,.12); }
 .final-score span, .summary-stats span { display: block; color: rgba(220,239,231,.5); font-size: 8px; font-weight: 900; letter-spacing: .2em; }
 .final-score strong { display: block; color: var(--mint); font: 900 clamp(47px, 7.5vw, 82px)/1 "Arial Black", sans-serif; letter-spacing: -.07em; }
@@ -399,12 +427,12 @@ kbd {
   .score-card { grid-column: 1; grid-row: 2; }
   .suspicion-card { grid-column: 2; grid-row: 2; }
   .event-toast { top: 125px; }
+  .contract-strip { top: 128px; left: 10px; width: 205px; }
   .first-prompt span { display: none; }
   .game-actions { bottom: 56px; right: 10px; flex-direction: column; }
   .lane-hints { bottom: 17px; }
   .runner-controls { bottom: 66px; }
   .runner-controls button { width: 54px; height: 50px; }
-  .runner-controls .slap-control { width: 91px; }
   .top-brand { display: none; }
   .start-screen { padding-inline: 22px; }
   .start-copy h1 { font-size: 18vw; }

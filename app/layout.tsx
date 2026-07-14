@@ -8,7 +8,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   const title = "Corporate Wars — Clock In. Slap Out.";
-  const description = "A fast, funny lane-based office arcade game where timing, nerve, and a little workplace chaos decide your score.";
+  const description = "A fast office runner where smart lane choices trigger automatic slaps, build combos, complete contracts, and climb a persistent career ladder.";
   return {
     title,
     description,

@@ -44,6 +44,11 @@ test("ships the full loop and keeps the Groq key server-side", async () => {
   assert.match(game, /PERFECT/);
   assert.match(game, /"cart" \| "coffee"/);
   assert.match(game, /DEADLINE DASH/);
+  assert.match(game, /const autoSlap/);
+  assert.match(game, /corporate-wars-career/);
+  assert.match(game, /CONTRACTS/);
+  assert.match(game, /RANKS/);
+  assert.match(game, /"walking" \| "desk" \| "chatting" \| "phone"/);
   assert.match(game, /Digit/);
   assert.match(game, /ArrowLeft/);
   assert.match(route, /process\.env\.GROQ_API_KEY/);

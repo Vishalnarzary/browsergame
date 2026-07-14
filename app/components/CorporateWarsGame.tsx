@@ -15,7 +15,12 @@ type Target = {
   hitAt?: number;
   knock: number;
   seed: number;
+  behavior: "walking" | "desk" | "chatting" | "phone";
+  lockedZ?: number;
 };
+
+type CareerProfile = { xp: number; runs: number; badges: string[] };
+type Contract = { label: string; metric: "slaps" | "dodges" | "flow" | "score"; target: number; reward: number };
 
 type RunnerItem = {
   id: number;
@@ -76,6 +81,10 @@ type GameData = {
   dodges: number;
   waveIndex: number;
   nextWaveAt: number;
+  slaps: number;
+  flowActivations: number;
+  challengeIndex: number;
+  challengeDone: boolean;
 };
 
 const WIDTH = 1200;
@@ -107,7 +116,19 @@ const FALLBACK_EVENTS: NoveltyEvent[] = [
   { event_type: "spawn_modifier", duration_sec: 13, params: { spawn_rate_multiplier: 1.35, target_type: "hr" }, flavor_text: "Mandatory culture survey. HR is everywhere — choose wisely.", rarity: "legendary" },
 ];
 
-function makeGame(now: number): GameData {
+const CONTRACTS: Contract[] = [
+  { label: "Auto-slap 12 employees", metric: "slaps", target: 12, reward: 180 },
+  { label: "Dodge 4 mail carts", metric: "dodges", target: 4, reward: 220 },
+  { label: "Trigger Flow State", metric: "flow", target: 1, reward: 250 },
+  { label: "Reach 1,200 productivity", metric: "score", target: 1200, reward: 200 },
+];
+
+const RANKS = [
+  { name: "INTERN", xp: 0 }, { name: "ASSOCIATE", xp: 450 }, { name: "SENIOR ASSOCIATE", xp: 1100 },
+  { name: "MANAGER", xp: 2200 }, { name: "DIRECTOR", xp: 4000 }, { name: "VP OF CHAOS", xp: 6500 }, { name: "CEO OF SLAPS", xp: 10000 },
+];
+
+function makeGame(now: number, challengeIndex = 0): GameData {
   return {
     startedAt: now, pausedAt: 0, pausedTotal: 0, score: 0, combo: 1, bestCombo: 1,
     suspicion: 0, selectedLane: 1, playerLane: 1, targets: [], items: [], particles: [], popups: [],
@@ -115,8 +136,25 @@ function makeGame(now: number): GameData {
     scriptedFired: false, liveFired: false, ceoFired: false, activeEvent: null, eventEndsAt: 0,
     slapAt: -1000, shake: 0, flash: 0, firstHit: false, recentEvents: [], runDistance: 0, speed: 0.128,
     itemId: 0, nextItemAt: now + 9000, focus: 0, flowUntil: 0, stumbleUntil: 0,
-    perfects: 0, dodges: 0, waveIndex: 0, nextWaveAt: 22,
+    perfects: 0, dodges: 0, waveIndex: 0, nextWaveAt: 22, slaps: 0, flowActivations: 0,
+    challengeIndex, challengeDone: false,
   };
+}
+
+function rankForXp(xp: number) {
+  let index = 0; for (let i = 0; i < RANKS.length; i++) if (xp >= RANKS[i].xp) index = i;
+  return { ...RANKS[index], index, next: RANKS[index + 1] || null };
+}
+
+function contractProgress(game: GameData, contract: Contract) {
+  if (contract.metric === "slaps") return game.slaps;
+  if (contract.metric === "dodges") return game.dodges;
+  if (contract.metric === "flow") return game.flowActivations;
+  return game.score;
+}
+
+function randomBehavior(): Target["behavior"] {
+  const r = Math.random(); return r < .48 ? "walking" : r < .68 ? "desk" : r < .86 ? "chatting" : "phone";
 }
 
 function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
@@ -177,6 +215,25 @@ function drawCorridor(ctx: CanvasRenderingContext2D, game: GameData, now: number
     roundedRect(ctx, left, q.y - h, w, h, 5); ctx.fill(); roundedRect(ctx, right, q.y - h, w, h, 5); ctx.fill();
     ctx.strokeStyle = "rgba(175,244,226,.2)"; ctx.lineWidth = Math.max(1, q.p * 4);
     ctx.strokeRect(left, q.y - h, w, h); ctx.strokeRect(right, q.y - h, w, h);
+    const ambientScale = .24 + q.p * .72; const bob = Math.sin(now / 300 + i) * 2 * ambientScale;
+    const drawAmbient = (x: number, mirror: number) => {
+      ctx.save(); ctx.translate(x, q.y - 18 * ambientScale + bob); ctx.scale(ambientScale * mirror, ambientScale);
+      if (i % 3 === 0) {
+        ctx.fillStyle = "#172b39"; ctx.fillRect(-42, -7, 84, 12); ctx.fillRect(-31, 5, 7, 28); ctx.fillRect(24, 5, 7, 28);
+        ctx.fillStyle = "#a8d8cb"; ctx.fillRect(-18, -33, 34, 24);
+        ctx.fillStyle = "#df9a65"; ctx.beginPath(); ctx.arc(0, -56, 12, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#526f8c"; roundedRect(ctx, -14, -46, 28, 35, 8); ctx.fill();
+      } else {
+        for (const dx of [-17, 17]) {
+          ctx.fillStyle = dx < 0 ? "#d7805b" : "#4a8b82"; roundedRect(ctx, dx - 10, -39, 20, 39, 7); ctx.fill();
+          ctx.fillStyle = "#c78357"; ctx.beginPath(); ctx.arc(dx, -51, 10, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.fillStyle = "rgba(240,255,249,.75)"; roundedRect(ctx, -23, -85, 46, 20, 8); ctx.fill();
+        ctx.fillStyle = "#18303d"; ctx.font = "900 13px Arial"; ctx.textAlign = "center"; ctx.fillText("...", 0, -72);
+      }
+      ctx.restore();
+    };
+    drawAmbient(left + w * .52, 1); drawAmbient(right + w * .48, -1);
   }
 
   // Track.
@@ -266,18 +323,31 @@ function drawTarget(ctx: CanvasRenderingContext2D, target: Target, game: GameDat
     ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(q.x, q.y - 48 * q.scale, 84 * q.scale, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = cfg.color; ctx.lineWidth = 4; ctx.globalAlpha = .65 + Math.sin(now / 90) * .25;
     ctx.beginPath(); ctx.ellipse(q.x, q.y - 46 * q.scale, 43 * q.scale, 74 * q.scale, 0, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
-    const center = (window.min + window.max) / 2;
-    const closeness = 1 - clamp(Math.abs(target.z - center) / ((window.max - window.min) / 2), 0, 1);
-    ctx.strokeStyle = closeness > .72 ? "#ffffff" : `${cfg.color}99`;
-    ctx.lineWidth = closeness > .72 ? 5 : 2;
-    ctx.beginPath(); ctx.ellipse(q.x, q.y - 46 * q.scale, (28 + closeness * 6) * q.scale, (49 + closeness * 8) * q.scale, 0, 0, Math.PI * 2); ctx.stroke();
-    if (closeness > .72) {
-      ctx.fillStyle = "#fff"; ctx.font = `900 ${Math.max(9, 11 * q.scale)}px Arial, sans-serif`; ctx.textAlign = "center";
-      ctx.fillText("PERFECT", q.x, q.y - 126 * q.scale);
+    const prepared = target.lockedZ !== undefined; const perfectSetup = prepared && target.lockedZ! <= .5;
+    ctx.strokeStyle = perfectSetup ? "#ffffff" : prepared ? "#6fffd3" : `${cfg.color}88`;
+    ctx.lineWidth = perfectSetup ? 5 : 2;
+    ctx.beginPath(); ctx.ellipse(q.x, q.y - 46 * q.scale, (prepared ? 34 : 28) * q.scale, (prepared ? 57 : 49) * q.scale, 0, 0, Math.PI * 2); ctx.stroke();
+    if (prepared) {
+      ctx.fillStyle = perfectSetup ? "#fff" : "#6fffd3"; ctx.font = `900 ${Math.max(9, 11 * q.scale)}px Arial, sans-serif`; ctx.textAlign = "center";
+      ctx.fillText(perfectSetup ? "PRIMED" : "LOCKED", q.x, q.y - 126 * q.scale);
     }
   }
 
+  if (target.behavior === "desk") {
+    ctx.fillStyle = "rgba(0,0,0,.28)"; ctx.beginPath(); ctx.ellipse(q.x, q.y + 10 * q.scale, 55 * q.scale, 13 * q.scale, 0, 0, Math.PI * 2); ctx.fill();
+  }
   drawPerson(ctx, q.x, q.y, q.scale, target.type, runPhase, false, hitT, target.knock);
+
+  if (target.behavior === "desk") {
+    ctx.save(); ctx.translate(q.x, q.y - 4 * q.scale); ctx.scale(q.scale, q.scale);
+    ctx.fillStyle = "#273b49"; roundedRect(ctx, -53, -20, 106, 33, 5); ctx.fill(); ctx.fillRect(-42, 12, 9, 38); ctx.fillRect(33, 12, 9, 38);
+    ctx.fillStyle = "#a7d9d2"; ctx.fillRect(-21, -43, 42, 25); ctx.fillStyle = "#10202c"; ctx.fillRect(-16, -38, 32, 16); ctx.restore();
+  } else if (target.behavior === "chatting") {
+    ctx.fillStyle = "rgba(242,255,249,.9)"; roundedRect(ctx, q.x + 24 * q.scale, q.y - 165 * q.scale, 56 * q.scale, 25 * q.scale, 10 * q.scale); ctx.fill();
+    ctx.fillStyle = "#162a37"; ctx.font = `900 ${Math.max(9, 12 * q.scale)}px Arial`; ctx.textAlign = "center"; ctx.fillText("blah…", q.x + 52 * q.scale, q.y - 148 * q.scale);
+  } else if (target.behavior === "phone") {
+    ctx.save(); ctx.translate(q.x + 32 * q.scale, q.y - 72 * q.scale); ctx.rotate(.22); ctx.fillStyle = "#07111a"; roundedRect(ctx, -7 * q.scale, -15 * q.scale, 14 * q.scale, 30 * q.scale, 3 * q.scale); ctx.fill(); ctx.restore();
+  }
 
   if (target.z > .44 && !target.resolved) {
     const labelY = q.y - 140 * q.scale;
@@ -358,12 +428,19 @@ export default function CorporateWarsGame() {
   const [screen, setScreen] = useState<Screen>("start");
   const [muted, setMuted] = useState(false);
   const [best, setBest] = useState(0);
-  const [hud, setHud] = useState({ score: 0, combo: 1, suspicion: 0, time: RUN_SECONDS, distance: 0, focus: 0, flow: false, perfects: 0 });
-  const [summary, setSummary] = useState({ score: 0, bestCombo: 1, highScore: 0, newBest: false, distance: 0, perfects: 0, dodges: 0 });
+  const [profile, setProfile] = useState<CareerProfile>({ xp: 0, runs: 0, badges: [] });
+  const [hud, setHud] = useState({ score: 0, combo: 1, suspicion: 0, time: RUN_SECONDS, distance: 0, focus: 0, flow: false, perfects: 0, contractLabel: CONTRACTS[0].label, contractProgress: 0, contractTarget: CONTRACTS[0].target, contractDone: false });
+  const [summary, setSummary] = useState({ score: 0, bestCombo: 1, highScore: 0, newBest: false, distance: 0, perfects: 0, dodges: 0, xpGained: 0, newRank: "", newBadges: [] as string[], contractDone: false });
   const [toast, setToast] = useState<NoveltyEvent | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
 
-  useEffect(() => { const saved = Number(localStorage.getItem("corporate-wars-best") || 0); setBest(Number.isFinite(saved) ? saved : 0); }, []);
+  useEffect(() => {
+    const saved = Number(localStorage.getItem("corporate-wars-best") || 0); setBest(Number.isFinite(saved) ? saved : 0);
+    try {
+      const stored = JSON.parse(localStorage.getItem("corporate-wars-career") || "null") as CareerProfile | null;
+      if (stored && Number.isFinite(stored.xp) && Number.isFinite(stored.runs) && Array.isArray(stored.badges)) setProfile(stored);
+    } catch { /* A fresh career is a valid fallback. */ }
+  }, []);
 
   const ensureAudio = useCallback(() => {
     if (!audioRef.current) audioRef.current = new AudioContext();
@@ -412,7 +489,7 @@ export default function CorporateWarsGame() {
     const lane = Math.floor(Math.random() * 3);
     const laneCrowded = game.targets.some((target) => !target.resolved && target.lane === lane && target.z < .3);
     if (laneCrowded) return;
-    game.targets.push({ id: ++game.targetId, lane, type, z: .035, resolved: false, knock: Math.random() < .5 ? -1 : 1, seed: Math.random() * Math.PI * 2 });
+    game.targets.push({ id: ++game.targetId, lane, type, z: .035, resolved: false, knock: Math.random() < .5 ? -1 : 1, seed: Math.random() * Math.PI * 2, behavior: randomBehavior() });
   }, []);
 
   const spawnItem = useCallback(() => {
@@ -429,7 +506,7 @@ export default function CorporateWarsGame() {
       ["manager", "hr", "manager"],
     ];
     const pattern = patterns[Math.min(patterns.length - 1, game.waveIndex - 1)];
-    pattern.forEach((type, lane) => game.targets.push({ id: ++game.targetId, lane, type: elapsed < 40 && type === "hr" ? "manager" : type, z: .03 + lane * .035, resolved: false, knock: lane === 0 ? -1 : 1, seed: lane * 1.7 }));
+    pattern.forEach((type, lane) => game.targets.push({ id: ++game.targetId, lane, type: elapsed < 40 && type === "hr" ? "manager" : type, z: .03 + lane * .035, resolved: false, knock: lane === 0 ? -1 : 1, seed: lane * 1.7, behavior: lane === 1 ? "chatting" : randomBehavior() }));
     game.nextSpawnAt = now + 2600; game.popups.push({ x: 600, y: 220, text: `DEADLINE DASH ${game.waveIndex}`, color: "#ffd75e", born: now });
     tone(360 + game.waveIndex * 40, .28, "square", .05, 170);
   }, [tone]);
@@ -437,14 +514,24 @@ export default function CorporateWarsGame() {
   const finishGame = useCallback(() => {
     const game = gameRef.current; const highScore = Math.max(best, game.score); const newBest = game.score > best;
     if (newBest) { localStorage.setItem("corporate-wars-best", String(game.score)); setBest(game.score); }
-    setSummary({ score: game.score, bestCombo: game.bestCombo, highScore, newBest, distance: Math.round(game.runDistance * 40), perfects: game.perfects, dodges: game.dodges });
+    const earnedXp = Math.max(30, Math.round(game.score * .08 + game.slaps * 4 + game.perfects * 8 + game.dodges * 5 + (game.challengeDone ? 120 : 0)));
+    const badgeCandidates = [
+      game.perfects >= 8 ? "EARLY BIRD" : "", game.dodges >= 5 ? "CART DANCER" : "",
+      game.flowActivations >= 2 ? "IN THE ZONE" : "", game.score >= 2500 ? "OVERACHIEVER" : "",
+    ].filter(Boolean);
+    const newBadges = badgeCandidates.filter((badge) => !profile.badges.includes(badge));
+    const nextProfile: CareerProfile = { xp: profile.xp + earnedXp, runs: profile.runs + 1, badges: [...profile.badges, ...newBadges] };
+    const oldRank = rankForXp(profile.xp); const nextRank = rankForXp(nextProfile.xp);
+    localStorage.setItem("corporate-wars-career", JSON.stringify(nextProfile)); setProfile(nextProfile);
+    setSummary({ score: game.score, bestCombo: game.bestCombo, highScore, newBest, distance: Math.round(game.runDistance * 40), perfects: game.perfects, dodges: game.dodges, xpGained: earnedXp, newRank: nextRank.index > oldRank.index ? nextRank.name : "", newBadges, contractDone: game.challengeDone });
     screenRef.current = "summary"; setScreen("summary"); setToastVisible(false); tone(newBest ? 620 : 310, .3, "triangle", .06, newBest ? 310 : -130);
-  }, [best, tone]);
+  }, [best, profile, tone]);
 
   const startGame = useCallback(() => {
-    ensureAudio(); const now = performance.now(); gameRef.current = makeGame(now); screenRef.current = "playing"; setScreen("playing");
-    setHud({ score: 0, combo: 1, suspicion: 0, time: RUN_SECONDS, distance: 0, focus: 0, flow: false, perfects: 0 }); setToast(null); setToastVisible(false); tone(320, .14, "triangle", .045, 220);
-  }, [ensureAudio, tone]);
+    ensureAudio(); const now = performance.now(); gameRef.current = makeGame(now, profile.runs % CONTRACTS.length); screenRef.current = "playing"; setScreen("playing");
+    const contract = CONTRACTS[profile.runs % CONTRACTS.length];
+    setHud({ score: 0, combo: 1, suspicion: 0, time: RUN_SECONDS, distance: 0, focus: 0, flow: false, perfects: 0, contractLabel: contract.label, contractProgress: 0, contractTarget: contract.target, contractDone: false }); setToast(null); setToastVisible(false); tone(320, .14, "triangle", .045, 220);
+  }, [ensureAudio, profile.runs, tone]);
 
   const togglePause = useCallback(() => {
     const now = performance.now(); const game = gameRef.current;
@@ -467,24 +554,20 @@ export default function CorporateWarsGame() {
     if (screenRef.current !== "playing") return; gameRef.current.selectedLane = clamp(lane, 0, 2);
   }, []);
 
-  const slap = useCallback(() => {
-    if (screenRef.current !== "playing") return;
-    ensureAudio(); const now = performance.now(); const game = gameRef.current; game.slapAt = now;
+  const autoSlap = useCallback((live: Target, now: number) => {
+    const game = gameRef.current; game.slapAt = now;
     tone(115, .07, "sawtooth", .028, 95);
-    const laneTargets = game.targets.filter((target) => target.lane === game.selectedLane && !target.resolved).sort((a, b) => b.z - a.z);
-    const live = laneTargets.find((target) => { const window = targetWindow(target.type); return target.z >= window.min && target.z <= window.max; });
-    if (live) {
+    {
       live.resolved = true; live.hitAt = now; const cfg = TARGETS[live.type]; const event = game.activeEvent;
       let eventMultiplier = event?.event_type === "score_modifier" ? getEventNumber(event, "score_multiplier", 1) : 1;
       if (event?.params.target_type && event.params.target_type !== live.type) eventMultiplier = 1;
-      const window = targetWindow(live.type); const center = (window.min + window.max) / 2;
-      const closeness = 1 - clamp(Math.abs(live.z - center) / ((window.max - window.min) / 2), 0, 1);
-      const perfect = closeness >= .76; const great = !perfect && closeness >= .43;
+      const lockedZ = live.lockedZ ?? live.z;
+      const perfect = lockedZ <= .5; const great = !perfect && lockedZ <= .68;
       const grade = perfect ? "PERFECT" : great ? "GREAT" : "GOOD";
       const precisionMultiplier = perfect ? 1.8 : great ? 1.25 : 1;
       const flowMultiplier = now < game.flowUntil ? 2 : 1;
       const points = Math.round(cfg.points * game.combo * eventMultiplier * precisionMultiplier * flowMultiplier);
-      game.score += points; game.combo = Math.min(6, Math.round((game.combo + (perfect ? .2 : .1)) * 10) / 10); game.bestCombo = Math.max(game.bestCombo, game.combo); game.firstHit = true;
+      game.score += points; game.combo = Math.min(6, Math.round((game.combo + (perfect ? .2 : .1)) * 10) / 10); game.bestCombo = Math.max(game.bestCombo, game.combo); game.firstHit = true; game.slaps += 1;
       game.focus = Math.min(100, game.focus + (perfect ? 26 : great ? 11 : 5));
       if (perfect) game.perfects += 1;
       if (live.type === "hr") game.suspicion += 15 * (event?.event_type === "hazard_toggle" ? getEventNumber(event, "hr_suspicion_multiplier", 1) : 1);
@@ -496,22 +579,13 @@ export default function CorporateWarsGame() {
       }
       game.popups.push({ x: q.x, y: q.y - 150 * q.scale, text: `${grade}! +${points}`, color: perfect ? "#ffffff" : cfg.color, born: now });
       if (game.focus >= 100 && now >= game.flowUntil) {
-        game.focus = 0; game.flowUntil = now + 6500; game.popups.push({ x: 600, y: 255, text: "FLOW STATE — SCORE ×2", color: "#6fffd3", born: now });
+        game.focus = 0; game.flowUntil = now + 6500; game.flowActivations += 1; game.popups.push({ x: 600, y: 255, text: "FLOW STATE — SCORE ×2", color: "#6fffd3", born: now });
         tone(520, .35, "triangle", .07, 410);
       }
       const base = live.type === "ceo" ? 130 : live.type === "hr" ? 180 : live.type === "manager" ? 230 : 285;
       tone(base, .16, "sawtooth", .08, -90); tone(base * 2.1, .08, "square", .035, -120);
-      return;
     }
-    const premature = laneTargets.find((target) => target.z > .42 && target.z < targetWindow(target.type).min);
-    if (premature?.type === "hr") {
-      game.suspicion += 25; game.combo = 1; game.focus = Math.max(0, game.focus - 18); const q = project(premature.lane, premature.z);
-      game.popups.push({ x: q.x, y: q.y - 90, text: "HR SAW THAT! +25%", color: "#ff5370", born: now }); tone(110, .28, "sawtooth", .06, -45);
-    } else if (premature?.type === "manager") {
-      game.combo = Math.max(1, Math.round((game.combo - .3) * 10) / 10); game.focus = Math.max(0, game.focus - 12); const q = project(premature.lane, premature.z);
-      game.popups.push({ x: q.x, y: q.y - 80, text: "TOO EARLY!", color: "#ff8b61", born: now }); tone(150, .14, "square", .035, -60);
-    } else game.focus = Math.max(0, game.focus - 4);
-  }, [ensureAudio, tone]);
+  }, [tone]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -521,11 +595,10 @@ export default function CorporateWarsGame() {
       if (screenRef.current !== "playing") return;
       if (event.code === "ArrowLeft" || event.code === "KeyA") moveLane(-1);
       else if (event.code === "ArrowRight" || event.code === "KeyD") moveLane(1);
-      else if (event.code === "Space") slap();
       else if (["Digit1", "Digit2", "Digit3"].includes(event.code)) selectLane(Number(event.code.slice(5)) - 1);
     };
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
-  }, [moveLane, selectLane, slap, startGame, togglePause]);
+  }, [moveLane, selectLane, startGame, togglePause]);
 
   useEffect(() => {
     let raf = 0;
@@ -540,7 +613,17 @@ export default function CorporateWarsGame() {
         const eventRate = game.activeEvent?.event_type === "spawn_modifier" ? getEventNumber(game.activeEvent, "spawn_rate_multiplier", 1) : 1;
         const flowActive = now < game.flowUntil; const stumbleActive = now < game.stumbleUntil; const worldRate = stumbleActive ? .58 : flowActive ? .82 : 1;
         game.runDistance += dt * (2.3 + elapsed * .012); game.playerLane += (game.selectedLane - game.playerLane) * Math.min(1, dt * 12);
-        game.targets.forEach((target) => { if (!target.resolved) target.z += game.speed * dt * worldRate; });
+        game.targets.forEach((target) => {
+          if (target.resolved) return;
+          const center = (targetWindow(target.type).min + targetWindow(target.type).max) / 2;
+          if (target.lane === game.selectedLane && target.z < center && target.lockedZ === undefined) target.lockedZ = target.z;
+          target.z += game.speed * dt * worldRate;
+        });
+        for (const target of game.targets) {
+          if (target.resolved || target.lane !== game.selectedLane) continue;
+          const window = targetWindow(target.type); const center = (window.min + window.max) / 2;
+          if (target.z >= center && target.z <= window.max) autoSlap(target, now);
+        }
         game.items.forEach((item) => { if (!item.resolved) item.z += game.speed * dt * worldRate; });
         if (game.activeEvent && now >= game.eventEndsAt) game.activeEvent = null;
         const decay = game.activeEvent?.event_type === "hazard_toggle" ? getEventNumber(game.activeEvent, "suspicion_decay_multiplier", 1) : 1;
@@ -572,13 +655,18 @@ export default function CorporateWarsGame() {
           }
         }
         if (game.focus >= 100 && now >= game.flowUntil) {
-          game.focus = 0; game.flowUntil = now + 6500; game.popups.push({ x: 600, y: 255, text: "FLOW STATE — SCORE ×2", color: "#6fffd3", born: now }); tone(520, .35, "triangle", .07, 410);
+          game.focus = 0; game.flowUntil = now + 6500; game.flowActivations += 1; game.popups.push({ x: 600, y: 255, text: "FLOW STATE — SCORE ×2", color: "#6fffd3", born: now }); tone(520, .35, "triangle", .07, 410);
+        }
+        const contract = CONTRACTS[game.challengeIndex]; const progress = contractProgress(game, contract);
+        if (!game.challengeDone && progress >= contract.target) {
+          game.challengeDone = true; game.score += contract.reward; game.popups.push({ x: 600, y: 205, text: `CONTRACT COMPLETE +${contract.reward}`, color: "#ffd75e", born: now });
+          tone(660, .3, "triangle", .07, 280);
         }
         game.targets = game.targets.filter((target) => target.resolved ? Boolean(target.hitAt && now - target.hitAt < 440) : target.z < 1.1);
         game.items = game.items.filter((item) => !item.resolved && item.z < 1.1);
         game.particles.forEach((p) => { p.life -= dt; p.vy += 430 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.spin += dt; });
         game.particles = game.particles.filter((p) => p.life > 0); game.popups = game.popups.filter((popup) => now - popup.born < 950);
-        if (now - game.lastHud > 80) { game.lastHud = now; setHud({ score: game.score, combo: game.combo, suspicion: Math.min(100, game.suspicion), time: Math.ceil(remaining), distance: Math.round(game.runDistance * 40), focus: game.focus, flow: now < game.flowUntil, perfects: game.perfects }); }
+        if (now - game.lastHud > 80) { game.lastHud = now; setHud({ score: game.score, combo: game.combo, suspicion: Math.min(100, game.suspicion), time: Math.ceil(remaining), distance: Math.round(game.runDistance * 40), focus: game.focus, flow: now < game.flowUntil, perfects: game.perfects, contractLabel: contract.label, contractProgress: Math.min(contract.target, progress), contractTarget: contract.target, contractDone: game.challengeDone }); }
         if (remaining <= 0 || game.suspicion >= 100) finishGame();
       } else game.lastFrame = now;
 
@@ -596,18 +684,18 @@ export default function CorporateWarsGame() {
       ctx.restore(); raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame); return () => cancelAnimationFrame(raf);
-  }, [fetchNovelty, finishGame, showEvent, spawnItem, spawnTarget, spawnWave, tone]);
+  }, [autoSlap, fetchNovelty, finishGame, showEvent, spawnItem, spawnTarget, spawnWave, tone]);
 
   const onCanvasClick = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (screenRef.current !== "playing") return;
     const rect = event.currentTarget.getBoundingClientRect(); const x = ((event.clientX - rect.left) / rect.width) * WIDTH;
     const lane = x < WIDTH / 3 ? 0 : x > WIDTH * 2 / 3 ? 2 : 1; selectLane(lane);
-    const hittable = gameRef.current.targets.some((target) => { const window = targetWindow(target.type); return target.lane === lane && !target.resolved && target.z >= window.min && target.z <= window.max; });
-    if (hittable) slap();
   };
 
   const toggleMute = () => { const next = !mutedRef.current; mutedRef.current = next; setMuted(next); if (!next) tone(420, .1, "triangle", .035, 80); };
   const suspicionColor = hud.suspicion > 72 ? "danger" : hud.suspicion > 38 ? "warn" : "safe";
+  const careerRank = rankForXp(profile.xp);
+  const careerProgress = careerRank.next ? clamp(((profile.xp - careerRank.xp) / (careerRank.next.xp - careerRank.xp)) * 100, 0, 100) : 100;
 
   return (
     <main className="game-shell">
@@ -622,21 +710,24 @@ export default function CorporateWarsGame() {
             <div className="hud-card suspicion-card"><div className="suspicion-head"><span className="hud-label">SUSPICION</span><b>{Math.round(hud.suspicion)}%</b></div><div className="meter"><i style={{ width: `${hud.suspicion}%` }} /></div><small>{hud.suspicion > 72 ? "SECURITY INBOUND" : hud.suspicion > 38 ? "KEEP IT CASUAL" : "BLEND IN"}</small></div>
           </section>
           <div className={`event-toast ${toastVisible ? "show" : ""} rarity-${toast?.rarity || "common"}`} role="status"><span className="event-kicker">OFFICE UPDATE</span><b>{toast?.flavor_text}</b>{toast && <span className="event-duration">{toast.duration_sec}s</span>}</div>
-          {!gameRef.current.firstHit && <div className="first-prompt"><kbd>← →</kbd> dodge &amp; chase <span>• hit the white PERFECT ring with <kbd>SPACE</kbd></span></div>}
+          <div className={`contract-strip ${hud.contractDone ? "done" : ""}`}><span>ACTIVE CONTRACT</span><b>{hud.contractLabel}</b><i>{hud.contractDone ? "COMPLETE" : `${hud.contractProgress}/${hud.contractTarget}`}</i></div>
+          {!gameRef.current.firstHit && <div className="first-prompt"><kbd>← →</kbd> choose your route early <span>• slaps trigger automatically when locked</span></div>}
           <div className="lane-hints" aria-hidden="true">{[1, 2, 3].map((n) => <span key={n} className={gameRef.current.selectedLane === n - 1 ? "active" : ""}>{n}</span>)}</div>
-          <div className="runner-controls" aria-label="Runner controls"><button onPointerDown={() => moveLane(-1)} aria-label="Move left">←</button><button className="slap-control" onPointerDown={slap}>SLAP</button><button onPointerDown={() => moveLane(1)} aria-label="Move right">→</button></div>
+          <div className="runner-controls" aria-label="Runner controls"><button onPointerDown={() => moveLane(-1)} aria-label="Move left">←</button><button onPointerDown={() => moveLane(1)} aria-label="Move right">→</button></div>
           <div className="game-actions"><button onClick={toggleMute} className="icon-btn" aria-label={muted ? "Turn sound on" : "Mute sound"}>{muted ? "SOUND OFF" : "SOUND ON"}</button><button onClick={togglePause} className="icon-btn">{screen === "paused" ? "RESUME" : "PAUSE"}</button></div>
         </>}
 
         {screen === "start" && <section className="screen-overlay start-screen">
           <div className="start-copy"><div className="eyebrow"><span>RUN THE FLOOR</span><i /> NO MORE SYNERGY</div><h1>CORPORATE<br /><em>WARS</em></h1>
-            <p>Sprint through the office, dodge mail carts, chase espresso, and time perfect slaps to unlock score-doubling Flow State.</p>
+            <p>Pick your route and the slap happens automatically. Lock onto employees early, dodge mail carts, collect espresso, and climb the corporate ranks.</p>
             <button className="primary-btn" onClick={startGame}><span>START RUNNING</span><small>ENTER / SPACE</small></button>
-            <div className="control-strip"><div><kbd>← →</kbd><span>CHANGE LANE</span></div><div><kbd>1–3</kbd><span>PICK LANE</span></div><div><kbd>SPACE</kbd><span>SLAP</span></div><div><kbd>ESC</kbd><span>PAUSE</span></div></div>
+            <div className="control-strip"><div><kbd>← →</kbd><span>CHANGE LANE</span></div><div><kbd>1–3</kbd><span>PICK LANE</span></div><div><kbd>AUTO</kbd><span>SLAP IN RANGE</span></div><div><kbd>ESC</kbd><span>PAUSE</span></div></div>
           </div>
           <aside className="briefing-card"><span className="stamp">CONFIDENTIAL</span><h2>CHASE LIST</h2>
             <div className="role-row safe"><b>10</b><span><strong>COLLEAGUE</strong>Safe and easy to catch.</span></div><div className="role-row manager"><b>50</b><span><strong>MANAGER</strong>Slap too early and lose combo.</span></div><div className="role-row risky"><b>150</b><span><strong>HR</strong>Huge points. Raises suspicion.</span></div><div className="role-row ceo"><b>500</b><span><strong>CEO</strong>Rare corridor bonus.</span></div>
-            <div className="skill-note"><b>SKILL LOOP</b><span>White ring = perfect timing. Coffee builds Focus. Full Focus slows the floor and doubles points.</span></div><div className="best-score"><span>PERSONAL BEST</span><strong>{best.toLocaleString()}</strong></div>
+            <div className="skill-note"><b>SKILL LOOP</b><span>Enter a target’s lane early to prime a perfect auto-slap. Coffee builds Focus; carts test your route.</span></div>
+            <div className="career-progress"><div><span>CAREER RANK</span><b>{careerRank.name}</b></div><div className="career-meter"><i style={{ width: `${careerProgress}%` }} /></div><small>{profile.xp} XP • {profile.runs} RUNS • {profile.badges.length} BADGES</small></div>
+            <div className="best-score"><span>PERSONAL BEST</span><strong>{best.toLocaleString()}</strong></div>
           </aside>
         </section>}
 
@@ -644,6 +735,7 @@ export default function CorporateWarsGame() {
 
         {screen === "summary" && <section className="screen-overlay summary-screen"><div className="summary-card"><span className="eyebrow">END OF RUN REPORT</span><h2>{gameRef.current.suspicion >= 100 ? "ESCORTED\nOUT." : "CLOCKED\nOUT."}</h2>
           {summary.newBest && <div className="new-record">NEW OFFICE RECORD</div>}<div className="final-score"><span>PRODUCTIVITY</span><strong>{summary.score.toLocaleString()}</strong></div>
+          <div className="run-rewards"><b>+{summary.xpGained} CAREER XP</b>{summary.contractDone && <span>CONTRACT COMPLETE</span>}{summary.newRank && <span>PROMOTED: {summary.newRank}</span>}{summary.newBadges.map((badge) => <span key={badge}>BADGE: {badge}</span>)}</div>
           <div className="summary-stats"><div><span>BEST COMBO</span><b>×{summary.bestCombo.toFixed(1)}</b></div><div><span>PERFECT SLAPS</span><b>{summary.perfects}</b></div><div><span>CARTS DODGED</span><b>{summary.dodges}</b></div><div><span>DISTANCE</span><b>{summary.distance}M</b></div><div><span>HIGH SCORE</span><b>{summary.highScore.toLocaleString()}</b></div></div>
           <button className="primary-btn" onClick={startGame}><span>RUN IT BACK</span><small>ENTER</small></button></div></section>}
       </div>
