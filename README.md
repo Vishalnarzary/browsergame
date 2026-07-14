@@ -8,9 +8,9 @@ Replay progression is built around skill and player choice. Before each run, cho
 
 Five glowing 3D power-ups add route decisions: Titan Crush grows the hero and clears two lanes, Distance Laser automatically fires down the selected lane, Long-Leg Kick attacks across two lanes, Phase Shift passes through obstacles and pursuers, and Echo Clone covers the mirrored lane. The server asks Groq for a strict structured batch of one to four drops at the start of each minute. Groq decides every drop's kind, lane, spawn time, pickup window, active duration, and rarity; validated local batches keep the mechanic playable if the API is unavailable.
 
-A separate Gemini 2.5 Flash request runs at the start of every minute and returns three to five funny office sentences, always including at least one motivational quote. A random minority of newly spawned employees displays those lines in readable speech bubbles. Server validation and bundled fallback batches preserve the feature whenever the API is unavailable.
+A separate Gemini 2.5 Flash request runs every 30 seconds and returns three to five funny office sentences, always including at least one motivational quote. Each generated line can appear on only one employee. A persistent device history, client filtering, server validation, and explicit prompt context prevent old or within-batch lines from repeating; unused unique fallbacks preserve the feature whenever the API is unavailable.
 
-Every normal slap randomly selects one of three stylized 3D reactions: a high off-screen full-body launch, a detached-arm fall, or a double-leg-detachment launch with bone-shard particles. The game randomly alternates between `public/audio/slap1.mp3` and `public/audio/slap2.mp3`, and uses `public/audio/bone-break.mp3` for either break reaction. Power-up attacks use the same supplied impact layer, with Long-Leg Kick also triggering the break sound. If any clip is absent, a synthesized slap or crack plays automatically instead.
+Every normal slap randomly selects one of three stylized 3D reactions: a high off-screen full-body launch, a detached-arm fall, or a double-leg-detachment launch with bone-shard particles. The supplied running recording loops throughout each active run, follows the runner's pace, pauses with the game, and respects the sound toggle. The game randomly alternates between `public/audio/slap1.mp3` and `public/audio/slap2.mp3`, and uses `public/audio/bone-break.mp3` for either break reaction. Power-up attacks use the same supplied impact layer, with Long-Leg Kick also triggering the break sound. If any impact clip is absent, a synthesized slap or crack plays automatically instead.
 
 ## Play locally
 
@@ -23,7 +23,7 @@ npm run dev
 
 ## Live AI direction
 
-The game is fully playable without API keys and silently uses bundled fallbacks. For live generated events and AI-directed power-up drops, copy `.env.example` to `.env.local`, set `GROQ_API_KEY`, and optionally change `GROQ_MODEL`. For minute-by-minute funny office chatter, also set `GEMINI_API_KEY`; `GEMINI_CHATTER_MODEL` defaults to `gemini-2.5-flash`.
+The game is fully playable without API keys and silently uses bundled fallbacks. For live generated events and AI-directed power-up drops, copy `.env.example` to `.env.local`, set `GROQ_API_KEY`, and optionally change `GROQ_MODEL`. For fresh funny office chatter every 30 seconds, also set `GEMINI_API_KEY`; `GEMINI_CHATTER_MODEL` defaults to `gemini-2.5-flash`.
 
 The secrets are read only by server routes under `app/api`. They are never sent to the browser. Requests have a short timeout, structured JSON schemas, server-side validation, and automatic in-game fallbacks.
 

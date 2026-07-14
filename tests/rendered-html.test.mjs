@@ -89,9 +89,14 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   assert.match(game, /powerLanes/);
   assert.match(game, /AI DROP/);
   assert.match(game, /fetchChatterBatch/);
-  assert.match(game, /nextChatterBatchAt \+= 60/);
+  assert.match(game, /CHATTER_INTERVAL_SECONDS = 30/);
+  assert.match(game, /nextChatterBatchAt \+= CHATTER_INTERVAL_SECONDS/);
   assert.match(game, /FALLBACK_CHATTER_BATCHES/);
-  assert.match(game, /Math\.random\(\) < 0\.38/);
+  assert.match(game, /CHATTER_HISTORY_KEY/);
+  assert.match(game, /chatterCursor < game\.chatterLines\.length/);
+  assert.doesNotMatch(game, /chatterCursor\+\+ % game\.chatterLines\.length/);
+  assert.match(game, /\/audio\/running\.mp3/);
+  assert.match(game, /running\.loop = true/);
   assert.match(scene, /"desk" \| "chatting" \| "phone" \| "presenting"/);
   assert.match(scene, /new THREE\.WebGLRenderer/);
   assert.match(scene, /new THREE\.PerspectiveCamera/);
@@ -141,6 +146,8 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   assert.match(chatterRoute, /"motivation"/);
   assert.match(chatterRoute, /responseMimeType: "application\/json"/);
   assert.match(chatterRoute, /responseJsonSchema/);
+  assert.match(chatterRoute, /slice\(-300\)/);
+  assert.match(chatterRoute, /seen\.has\(normalized\)/);
   assert.doesNotMatch(chatterRoute, /api\.groq\.com|GROQ_API_KEY/);
   assert.doesNotMatch(game, /GROQ_API_KEY|GEMINI_API_KEY|NEXT_PUBLIC/);
   assert.doesNotMatch(envExample, /NEXT_PUBLIC_(GROQ|GEMINI)/);
@@ -176,8 +183,9 @@ test("office chatter planner fails fast without a secret so fallback lines stay 
   assert.equal(response.status, 503);
 });
 
-test("includes both randomized slap recordings and the bone-break recording", async () => {
+test("includes the running loop, both randomized slaps, and the bone-break recording", async () => {
   const sizes = await Promise.all([
+    stat(new URL("../public/audio/running.mp3", import.meta.url)),
     stat(new URL("../public/audio/slap1.mp3", import.meta.url)),
     stat(new URL("../public/audio/slap2.mp3", import.meta.url)),
     stat(new URL("../public/audio/bone-break.mp3", import.meta.url)),

@@ -127,6 +127,8 @@ const RUN_SECONDS = 100;
 const SLAP_MIN = 0.68;
 const SLAP_DISTANCE = 2.35;
 const CLEAN_COMMIT_Z = -25;
+const CHATTER_INTERVAL_SECONDS = 30;
+const CHATTER_HISTORY_KEY = "corporate-wars-chatter-history";
 const DAILY_CONTRACT_TARGET = 2;
 const DAILY_REWARD = 300;
 
@@ -214,6 +216,7 @@ const defaultHud = {
 };
 
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)); }
+function normalizeChatter(text: string) { return text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
 function todayKey() { return new Date().toISOString().slice(0, 10); }
 function dailyProgress(profile: CareerProfile): DailyProgress {
   const today = todayKey();
@@ -292,6 +295,8 @@ export default function CorporateWarsGame() {
   const gameRef = useRef<GameData>(makeGame());
   const audioRef = useRef<AudioContext | null>(null);
   const impactAudioRef = useRef<Partial<Record<ImpactSound, { audio: HTMLAudioElement; ready: boolean }>>>({});
+  const runningAudioRef = useRef<HTMLAudioElement | null>(null);
+  const chatterHistoryRef = useRef<string[]>([]);
   const mutedRef = useRef(false);
   const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [screen, setScreen] = useState<Screen>("start");
@@ -317,6 +322,10 @@ export default function CorporateWarsGame() {
           if (saved.preferredStyle && RUN_STYLES[saved.preferredStyle]) setRunStyle(saved.preferredStyle);
         }
       } catch { /* Ignore malformed local progress. */ }
+      try {
+        const history = JSON.parse(localStorage.getItem(CHATTER_HISTORY_KEY) || "[]") as unknown;
+        if (Array.isArray(history)) chatterHistoryRef.current = history.filter((line): line is string => typeof line === "string");
+      } catch { /* Ignore malformed chatter history. */ }
     });
     return () => cancelAnimationFrame(restoreFrame);
   }, []);
@@ -333,6 +342,17 @@ export default function CorporateWarsGame() {
       audio.load(); impactAudioRef.current[name] = entry;
     }
     return () => { Object.values(impactAudioRef.current).forEach((entry) => entry?.audio.pause()); impactAudioRef.current = {}; };
+  }, []);
+
+  useEffect(() => {
+    const running = new Audio("/audio/running.mp3");
+    running.preload = "auto";
+    running.loop = true;
+    running.volume = 0.46;
+    running.muted = mutedRef.current;
+    runningAudioRef.current = running;
+    running.load();
+    return () => { running.pause(); runningAudioRef.current = null; };
   }, []);
 
   const tone = useCallback((frequency: number, duration = 0.1, type: OscillatorType = "triangle", volume = 0.04, slide = 0) => {
@@ -465,41 +485,55 @@ export default function CorporateWarsGame() {
     tone(470, 0.2, "triangle", 0.045, 250);
   }, [showFeedback, tone]);
 
-  const fetchChatterBatch = useCallback(async (minuteStart: number, runToken: number) => {
+  const fetchChatterBatch = useCallback(async (batchStart: number, runToken: number) => {
     const snapshot = gameRef.current;
+    const history = chatterHistoryRef.current;
     let batch: ChatterBatch | null = null;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6500);
+    const timeout = setTimeout(() => controller.abort(), 20000);
     try {
       const response = await fetch("/api/office-chatter", {
         method: "POST", headers: { "content-type": "application/json" }, signal: controller.signal,
-        body: JSON.stringify({ score: snapshot.score, elapsedSec: Math.round(snapshot.elapsed), recentLines: snapshot.recentChatter }),
+        body: JSON.stringify({ score: snapshot.score, elapsedSec: Math.round(snapshot.elapsed), recentLines: history.slice(-300) }),
       });
       if (!response.ok) throw new Error("fallback");
       const candidate = await response.json() as ChatterBatch;
+      const seen = new Set(history.map(normalizeChatter));
       const valid = Array.isArray(candidate.sentences) && candidate.sentences.length >= 3 && candidate.sentences.length <= 5
         && candidate.sentences.every((line) => typeof line.text === "string" && line.text.length >= 8 && line.text.length <= 90 && (line.kind === "office" || line.kind === "motivation"))
-        && candidate.sentences.some((line) => line.kind === "motivation");
+        && candidate.sentences.some((line) => line.kind === "motivation")
+        && candidate.sentences.every((line) => { const normalized = normalizeChatter(line.text); if (!normalized || seen.has(normalized)) return false; seen.add(normalized); return true; });
       if (!valid) throw new Error("invalid chatter");
       batch = candidate;
     } catch {
-      batch = FALLBACK_CHATTER_BATCHES[Math.floor(minuteStart / 60) % FALLBACK_CHATTER_BATCHES.length];
+      const seen = new Set(history.map(normalizeChatter));
+      const pool = FALLBACK_CHATTER_BATCHES.flatMap((candidate) => candidate.sentences).filter((line) => !seen.has(normalizeChatter(line.text)));
+      const motivation = pool.find((line) => line.kind === "motivation");
+      const office = pool.filter((line) => line.kind === "office");
+      const offset = office.length ? Math.floor(batchStart / CHATTER_INTERVAL_SECONDS) % office.length : 0;
+      const rotated = [...office.slice(offset), ...office.slice(0, offset)];
+      const fresh = motivation ? [motivation, ...rotated.slice(0, 4)] : [];
+      batch = fresh.length >= 3 ? { sentences: fresh } : null;
     } finally {
       clearTimeout(timeout);
     }
     const game = gameRef.current;
-    if (game.runToken !== runToken || !batch) return;
+    if (game.runToken !== runToken) return;
+    game.chatterBatchPending = false;
+    if (!batch) { game.chatterLines = []; return; }
     game.chatterLines = [...batch.sentences.filter((line) => line.kind === "motivation"), ...batch.sentences.filter((line) => line.kind === "office")];
     game.chatterCursor = 0;
-    game.recentChatter = [...game.recentChatter, ...batch.sentences.map((line) => line.text)].slice(-10);
-    game.chatterBatchPending = false;
+    const nextHistory = [...history, ...batch.sentences.map((line) => line.text)];
+    chatterHistoryRef.current = nextHistory;
+    game.recentChatter = nextHistory.slice(-300);
+    try { localStorage.setItem(CHATTER_HISTORY_KEY, JSON.stringify(nextHistory)); } catch { /* Chatter still remains unique for this session. */ }
   }, []);
 
   const spawnTarget = useCallback((lane?: number, z?: number, forcedType?: TargetType, activity?: OfficeActivity) => {
     const game = gameRef.current;
     const targetLane = lane ?? Math.floor(Math.random() * 3);
-    const showChatter = game.chatterLines.length > 0 && Math.random() < 0.38;
-    const chatter = showChatter ? game.chatterLines[game.chatterCursor++ % game.chatterLines.length] : undefined;
+    const showChatter = game.chatterCursor < game.chatterLines.length && Math.random() < 0.5;
+    const chatter = showChatter ? game.chatterLines[game.chatterCursor++] : undefined;
     game.targets.push({
       id: ++game.targetId, lane: targetLane, type: forcedType ?? chooseType(game.elapsed, game.activeEvent),
       z: z ?? -78 - Math.random() * 24, seed: Math.random() * 9, activity: activity ?? randomActivity(),
@@ -529,11 +563,15 @@ export default function CorporateWarsGame() {
 
   const startGame = useCallback(() => {
     const contractIndex = profile.runs % CONTRACTS.length;
-    gameRef.current = makeGame(contractIndex, runStyle);
+    const nextGame = makeGame(contractIndex, runStyle);
+    nextGame.recentChatter = chatterHistoryRef.current.slice(-300);
+    gameRef.current = nextGame;
     screenRef.current = "playing"; setScreen("playing");
     const contract = CONTRACTS[contractIndex];
     setHud({ ...defaultHud, contractLabel: contract.label, contractTarget: contract.target });
     setToast(null); setToastVisible(false); setFeedback(null);
+    const running = runningAudioRef.current;
+    if (running) { running.currentTime = 0; running.playbackRate = 1; running.muted = mutedRef.current; void running.play().catch(() => undefined); }
     tone(320, 0.14, "triangle", 0.045, 220);
   }, [profile.runs, runStyle, tone]);
 
@@ -565,12 +603,13 @@ export default function CorporateWarsGame() {
     localStorage.setItem("corporate-wars-career", JSON.stringify(nextProfile)); setProfile(nextProfile);
     setSummary({ score: game.score, highScore, bestCombo: game.bestCombo, distance: Math.round(game.runDistance), backHits: game.backHits, sideHits: game.sideHits, baits: game.chaserBaits, xp: earnedXp, newRank: nextRank.index > oldRank.index ? nextRank.name : "", badges: newBadges, contractDone: game.challengeDone, newBest, caught: game.suspicion >= 100, grade, dailyBonus, chainBonus, contractChain, nextContract, style: game.runStyle });
     screenRef.current = "summary"; setScreen("summary"); setToastVisible(false);
+    runningAudioRef.current?.pause();
     tone(newBest ? 620 : 310, 0.32, "triangle", 0.06, newBest ? 310 : -130);
   }, [best, profile, tone]);
 
   const togglePause = useCallback(() => {
-    if (screenRef.current === "playing") { gameRef.current.speedControl = 0; screenRef.current = "paused"; setScreen("paused"); }
-    else if (screenRef.current === "paused") { gameRef.current.lastFrame = performance.now(); screenRef.current = "playing"; setScreen("playing"); }
+    if (screenRef.current === "playing") { gameRef.current.speedControl = 0; screenRef.current = "paused"; setScreen("paused"); runningAudioRef.current?.pause(); }
+    else if (screenRef.current === "paused") { gameRef.current.lastFrame = performance.now(); screenRef.current = "playing"; setScreen("playing"); void runningAudioRef.current?.play().catch(() => undefined); }
   }, []);
 
   const moveLane = useCallback((direction: -1 | 1) => {
@@ -688,6 +727,7 @@ export default function CorporateWarsGame() {
         const sprintTop = game.runStyle === "sprinter" ? 1.5 : 1.38;
         const speedTarget = game.speedControl > 0 ? sprintTop : game.speedControl < 0 ? 0.68 : 1;
         game.speedFactor += (speedTarget - game.speedFactor) * Math.min(1, dt * 5.8);
+        if (runningAudioRef.current) runningAudioRef.current.playbackRate = clamp(0.84 + game.speedFactor * 0.16, 0.9, 1.08);
         const hitStop = game.elapsed < game.hitStopUntil;
         const speed = (11.7 + game.elapsed * 0.045) * game.speedFactor * (stumble ? 0.62 : flow ? 0.88 : 1) * (hitStop ? 0.12 : 1);
         const jumpProgress = game.elapsed < game.jumpUntil ? clamp((game.elapsed - game.jumpStartedAt) / 0.94, 0, 1) : 0;
@@ -702,10 +742,10 @@ export default function CorporateWarsGame() {
           void fetchPowerupBatch(minuteStart, game.runToken);
         }
         if (game.elapsed >= game.nextChatterBatchAt && !game.chatterBatchPending) {
-          const minuteStart = game.nextChatterBatchAt;
-          game.nextChatterBatchAt += 60;
+          const batchStart = game.nextChatterBatchAt;
+          game.nextChatterBatchAt += CHATTER_INTERVAL_SECONDS;
           game.chatterBatchPending = true;
-          void fetchChatterBatch(minuteStart, game.runToken);
+          void fetchChatterBatch(batchStart, game.runToken);
         }
         game.activePowerups = game.activePowerups.filter((powerup) => powerup.endsAt > game.elapsed);
         const arriving = game.scheduledPowerups.filter((powerup) => powerup.spawnAt <= game.elapsed);
@@ -885,7 +925,7 @@ export default function CorporateWarsGame() {
     selectLane(x < 1 / 3 ? 0 : x > 2 / 3 ? 2 : 1);
   };
 
-  const toggleMute = () => { mutedRef.current = !mutedRef.current; setMuted(mutedRef.current); if (!mutedRef.current) tone(420, 0.1, "triangle", 0.035, 80); };
+  const toggleMute = () => { mutedRef.current = !mutedRef.current; setMuted(mutedRef.current); if (runningAudioRef.current) runningAudioRef.current.muted = mutedRef.current; if (!mutedRef.current) tone(420, 0.1, "triangle", 0.035, 80); };
   const suspicionColor = hud.suspicion > 72 ? "danger" : hud.suspicion > 38 ? "warn" : "safe";
   const careerRank = rankForXp(profile.xp);
   const careerProgress = careerRank.next ? clamp(((profile.xp - careerRank.xp) / (careerRank.next.xp - careerRank.xp)) * 100, 0, 100) : 100;
