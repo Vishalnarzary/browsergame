@@ -4,6 +4,8 @@ A complete WebGL 3D browser arcade game with a long-view office corridor, three 
 
 The player is the only automatic runner. Rounded human characters have faces, hands, hair, layered clothing, and role badges printed directly on their shirts instead of floating labels. Employees work at desks, talk in groups, use phones, and present around the office. Line up early to approach from behind for a clean hit. A late side hit creates a pursuing employee who follows your lane; change lanes late to bait that pursuer into a mail cart. The game also includes Focus, score-doubling Flow State, espresso pickups, formation waves, rotating contracts, badges, and persistent career ranks.
 
+Five glowing 3D power-ups add route decisions: Titan Crush grows the hero and clears two lanes, Distance Laser automatically fires down the selected lane, Long-Leg Kick attacks across two lanes, Phase Shift passes through obstacles and pursuers, and Echo Clone covers the mirrored lane. The server asks Groq for a strict structured batch of one to four drops at the start of each minute. Groq decides every drop's kind, lane, spawn time, pickup window, active duration, and rarity; validated local batches keep the mechanic playable if the API is unavailable.
+
 ## Play locally
 
 Requires Node.js 22.13 or newer.
@@ -13,11 +15,11 @@ npm install
 npm run dev
 ```
 
-## Groq novelty events
+## Groq live direction
 
-The game is fully playable without an API key and silently uses ten bundled events. For live generated events, copy `.env.example` to `.env.local`, set `GROQ_API_KEY`, and optionally change `GROQ_MODEL`.
+The game is fully playable without an API key and silently uses bundled novelty events and scheduled power-up batches. For live generated events and AI-directed power-up drops, copy `.env.example` to `.env.local`, set `GROQ_API_KEY`, and optionally change `GROQ_MODEL`.
 
-The secret is read only by `app/api/novelty-event/route.ts`. It is never sent to the browser. Requests have a short timeout, strict JSON schema, server-side validation, and an automatic in-game fallback.
+The secret is read only by the two server routes under `app/api`. It is never sent to the browser. Requests have a short timeout, strict JSON schema, server-side validation, and an automatic in-game fallback.
 
 ## Controls
 

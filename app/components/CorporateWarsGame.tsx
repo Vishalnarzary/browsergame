@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { OfficeRunner3D, type OfficeActivity, type SceneFrame } from "./OfficeRunner3D";
+import { OfficeRunner3D, type OfficeActivity, type PowerupKind, type SceneFrame } from "./OfficeRunner3D";
 
 type Screen = "start" | "playing" | "paused" | "summary";
 type TargetType = "colleague" | "manager" | "hr" | "intern" | "ceo";
@@ -31,6 +31,12 @@ type RunnerItem = {
 };
 
 type Pursuer = { id: number; lane: number; gap: number; reaction: number; seed: number; type: TargetType };
+type PowerupSpec = { kind: PowerupKind; lane: number; spawn_offset_sec: number; pickup_window_sec: number; active_duration_sec: number; rarity: "common" | "rare" | "legendary" };
+type PowerupBatch = { batch_flavor: string; powerups: PowerupSpec[] };
+type ScheduledPowerup = PowerupSpec & { id: number; spawnAt: number };
+type MapPowerup = PowerupSpec & { id: number; z: number; expiresAt: number };
+type ActivePowerup = { kind: PowerupKind; endsAt: number };
+type PowerStrike = { id: number; kind: PowerupKind; fromLane: number; toLane: number; targetZ: number; bornAt: number };
 type CareerProfile = { xp: number; runs: number; badges: string[] };
 type Contract = { label: string; metric: "back" | "baits" | "flow" | "score"; target: number; reward: number };
 
@@ -87,6 +93,18 @@ type GameData = {
   jumpUntil: number;
   jumpCooldownUntil: number;
   hitStopUntil: number;
+  scheduledPowerups: ScheduledPowerup[];
+  mapPowerups: MapPowerup[];
+  activePowerups: ActivePowerup[];
+  powerStrikes: PowerStrike[];
+  nextPowerupBatchAt: number;
+  powerupBatchPending: boolean;
+  powerupId: number;
+  strikeId: number;
+  nextLaserAt: number;
+  nextKickAt: number;
+  recentPowerupKinds: PowerupKind[];
+  runToken: number;
 };
 
 const RUN_SECONDS = 100;
@@ -115,6 +133,25 @@ const FALLBACK_EVENTS: NoveltyEvent[] = [
   { event_type: "hazard_toggle", duration_sec: 18, params: { suspicion_decay_multiplier: 1.8 }, flavor_text: "Quiet hour: the office is pretending not to notice.", rarity: "common" },
 ];
 
+const POWERUP_LABELS: Record<PowerupKind, string> = {
+  titan: "TITAN CRUSH", laser: "DISTANCE LASER", long_leg: "LONG-LEG KICK", phase: "PHASE SHIFT", clone: "ECHO CLONE",
+};
+
+const FALLBACK_POWERUP_BATCHES: PowerupBatch[] = [
+  { batch_flavor: "Emergency R&D shipment routed to the main corridor.", powerups: [
+    { kind: "titan", lane: 1, spawn_offset_sec: 8, pickup_window_sec: 12, active_duration_sec: 10, rarity: "legendary" },
+    { kind: "phase", lane: 0, spawn_offset_sec: 22, pickup_window_sec: 11, active_duration_sec: 9, rarity: "rare" },
+    { kind: "laser", lane: 2, spawn_offset_sec: 37, pickup_window_sec: 12, active_duration_sec: 11, rarity: "rare" },
+    { kind: "clone", lane: 1, spawn_offset_sec: 50, pickup_window_sec: 9, active_duration_sec: 8, rarity: "legendary" },
+  ] },
+  { batch_flavor: "Prototype benefits have escaped the innovation lab.", powerups: [
+    { kind: "long_leg", lane: 2, spawn_offset_sec: 7, pickup_window_sec: 12, active_duration_sec: 10, rarity: "rare" },
+    { kind: "clone", lane: 0, spawn_offset_sec: 19, pickup_window_sec: 10, active_duration_sec: 9, rarity: "legendary" },
+    { kind: "titan", lane: 1, spawn_offset_sec: 34, pickup_window_sec: 13, active_duration_sec: 8, rarity: "legendary" },
+    { kind: "phase", lane: 2, spawn_offset_sec: 48, pickup_window_sec: 10, active_duration_sec: 12, rarity: "rare" },
+  ] },
+];
+
 const CONTRACTS: Contract[] = [
   { label: "Land 9 clean back hits", metric: "back", target: 9, reward: 220 },
   { label: "Bait 2 pursuers into carts", metric: "baits", target: 2, reward: 300 },
@@ -132,6 +169,7 @@ const defaultHud = {
   backHits: 0, sideHits: 0, pursuers: 0, baits: 0, contractLabel: CONTRACTS[0].label,
   contractProgress: 0, contractTarget: CONTRACTS[0].target, contractDone: false, selectedLane: 1, firstHit: false,
   speedFactor: 1, jumping: false,
+  activePowerups: [] as { kind: PowerupKind; remaining: number }[], powerupsQueued: 0, aiPlanning: false,
 };
 
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)); }
@@ -158,6 +196,8 @@ function makeGame(challengeIndex = 0): GameData {
     activeEvent: null, eventEndsAt: 0, scriptedFired: false, liveFired: false, firstHit: false, backHits: 0,
     sideHits: 0, chaserBaits: 0, dodges: 0, slaps: 0, flowActivations: 0, challengeIndex, challengeDone: false, recentEvents: [],
     speedControl: 0, speedFactor: 1, jumpStartedAt: -10, jumpUntil: -10, jumpCooldownUntil: 0, hitStopUntil: 0,
+    scheduledPowerups: [], mapPowerups: [], activePowerups: [], powerStrikes: [], nextPowerupBatchAt: 0,
+    powerupBatchPending: false, powerupId: 0, strikeId: 0, nextLaserAt: 0, nextKickAt: 0, recentPowerupKinds: [], runToken: Math.random(),
   };
 }
 
@@ -177,6 +217,14 @@ function contractProgress(game: GameData, contract: Contract) {
 function eventNumber(event: NoveltyEvent | null, key: string, fallback: number) {
   const value = event?.params[key];
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function hasPowerup(game: GameData, kind: PowerupKind) { return game.activePowerups.some((powerup) => powerup.kind === kind && powerup.endsAt > game.elapsed); }
+function powerLanes(game: GameData) {
+  const main = game.selectedLane;
+  if (main === 0) return [0, 1];
+  if (main === 2) return [2, 1];
+  return game.previousPlayerLane < game.playerLane ? [1, 2] : [1, 0];
 }
 
 export default function CorporateWarsGame() {
@@ -271,6 +319,46 @@ export default function CorporateWarsGame() {
       displayEvent(FALLBACK_EVENTS[Math.floor(Math.random() * FALLBACK_EVENTS.length)]);
     }
   }, [displayEvent]);
+
+  const fetchPowerupBatch = useCallback(async (minuteStart: number, runToken: number) => {
+    const snapshot = gameRef.current;
+    let batch: PowerupBatch | null = null;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4500);
+    try {
+      const response = await fetch("/api/powerup-batch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          score: snapshot.score,
+          elapsedSec: Math.round(snapshot.elapsed),
+          difficultyTier: Math.min(5, 1 + Math.floor(snapshot.elapsed / 20)),
+          activePowerups: snapshot.activePowerups.map((powerup) => powerup.kind),
+          recentKinds: snapshot.recentPowerupKinds,
+        }),
+      });
+      if (!response.ok) throw new Error("fallback");
+      const candidate = await response.json() as PowerupBatch;
+      const valid = Array.isArray(candidate.powerups) && candidate.powerups.length >= 1 && candidate.powerups.length <= 4
+        && candidate.powerups.every((powerup) => POWERUP_LABELS[powerup.kind] && Number.isInteger(powerup.lane) && powerup.lane >= 0 && powerup.lane <= 2);
+      if (!valid) throw new Error("invalid batch");
+      batch = candidate;
+    } catch {
+      batch = FALLBACK_POWERUP_BATCHES[Math.floor(minuteStart / 60) % FALLBACK_POWERUP_BATCHES.length];
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const game = gameRef.current;
+    if (game.runToken !== runToken || !batch) return;
+    const usablePowerups = batch.powerups.filter((powerup) => minuteStart + powerup.spawn_offset_sec < RUN_SECONDS - 2);
+    game.scheduledPowerups.push(...usablePowerups.map((powerup) => ({ ...powerup, id: ++game.powerupId, spawnAt: minuteStart + powerup.spawn_offset_sec })));
+    game.recentPowerupKinds = [...game.recentPowerupKinds, ...usablePowerups.map((powerup) => powerup.kind)].slice(-8);
+    game.powerupBatchPending = false;
+    showFeedback(`AI DROP QUEUED x${usablePowerups.length}`, "clean");
+    tone(470, 0.2, "triangle", 0.045, 250);
+  }, [showFeedback, tone]);
 
   const spawnTarget = useCallback((lane?: number, z?: number, forcedType?: TargetType, activity?: OfficeActivity) => {
     const game = gameRef.current;
@@ -380,6 +468,27 @@ export default function CorporateWarsGame() {
     }
   }, [showFeedback, tone]);
 
+  const resolvePowerHit = useCallback((target: Target, kind: PowerupKind) => {
+    if (target.resolved) return;
+    const game = gameRef.current;
+    target.resolved = true;
+    target.hitMode = kind === "laser" ? "back" : "side";
+    target.hitAt = game.elapsed;
+    game.slapUntil = game.elapsed + 0.24;
+    game.hitStopUntil = game.elapsed + 0.045;
+    game.slaps += 1;
+    game.firstHit = true;
+    const multiplier = kind === "laser" ? 1.35 : kind === "titan" ? 1.2 : 1;
+    const points = Math.round(TARGETS[target.type].points * Math.max(1, game.combo) * multiplier);
+    game.score += points;
+    game.backHits += 1;
+    game.combo = Math.min(8, Math.round((game.combo + 0.12) * 100) / 100);
+    game.focus = Math.min(100, game.focus + 8);
+    game.bestCombo = Math.max(game.bestCombo, game.combo);
+    game.powerStrikes.push({ id: ++game.strikeId, kind, fromLane: game.selectedLane, toLane: target.lane, targetZ: target.z, bornAt: game.elapsed });
+    tone(kind === "laser" ? 920 : kind === "titan" ? 92 : 240, 0.12, kind === "laser" ? "sawtooth" : "triangle", 0.045, kind === "laser" ? -360 : 160);
+  }, [tone]);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (["Space", "ArrowLeft", "ArrowRight", "Enter", "KeyW", "KeyS"].includes(event.code)) event.preventDefault();
@@ -421,6 +530,28 @@ export default function CorporateWarsGame() {
         game.previousPlayerLane = game.playerLane;
         game.playerLane += (game.selectedLane - game.playerLane) * Math.min(1, dt * 11.5);
 
+        if (game.elapsed >= game.nextPowerupBatchAt && !game.powerupBatchPending) {
+          const minuteStart = game.nextPowerupBatchAt;
+          game.nextPowerupBatchAt += 60;
+          game.powerupBatchPending = true;
+          void fetchPowerupBatch(minuteStart, game.runToken);
+        }
+        game.activePowerups = game.activePowerups.filter((powerup) => powerup.endsAt > game.elapsed);
+        const arriving = game.scheduledPowerups.filter((powerup) => powerup.spawnAt <= game.elapsed);
+        game.scheduledPowerups = game.scheduledPowerups.filter((powerup) => powerup.spawnAt > game.elapsed);
+        game.mapPowerups.push(...arriving.map((powerup) => ({ ...powerup, z: -74, expiresAt: game.elapsed + powerup.pickup_window_sec })));
+        for (const powerup of game.mapPowerups) powerup.z += speed * dt;
+        const pickedUp = game.mapPowerups.find((powerup) => powerup.z >= 4 && powerup.z <= 6.4 && powerup.lane === game.selectedLane && Math.abs(game.playerLane - powerup.lane) < 0.3);
+        if (pickedUp) {
+          game.mapPowerups = game.mapPowerups.filter((powerup) => powerup.id !== pickedUp.id);
+          game.activePowerups = game.activePowerups.filter((powerup) => powerup.kind !== pickedUp.kind);
+          game.activePowerups.push({ kind: pickedUp.kind, endsAt: game.elapsed + pickedUp.active_duration_sec });
+          game.score += pickedUp.rarity === "legendary" ? 100 : pickedUp.rarity === "rare" ? 70 : 45;
+          showFeedback(`${POWERUP_LABELS[pickedUp.kind]}  ${pickedUp.active_duration_sec}s`, "clean");
+          tone(360, 0.32, "triangle", 0.07, 520);
+        }
+        game.mapPowerups = game.mapPowerups.filter((powerup) => powerup.expiresAt > game.elapsed && powerup.z < 9);
+
         for (const target of game.targets) {
           if (target.resolved) continue;
           target.z += speed * dt;
@@ -428,7 +559,6 @@ export default function CorporateWarsGame() {
             if (target.alignedAtZ === undefined) target.alignedAtZ = target.z;
             if (target.z <= CLEAN_COMMIT_Z) target.cleanLine = true;
           } else if (target.z > -18) target.cleanLine = false;
-          if (target.z >= SLAP_DISTANCE && target.z < 5.5 && target.lane === game.selectedLane && Math.abs(game.playerLane - target.lane) < 0.22) resolveSlap(target);
         }
 
         for (const item of game.items) if (!item.resolved) item.z += speed * dt;
@@ -436,6 +566,36 @@ export default function CorporateWarsGame() {
           pursuer.reaction -= dt;
           if (pursuer.reaction <= 0) pursuer.lane += (game.playerLane - pursuer.lane) * Math.min(1, dt * 1.65);
           pursuer.gap -= dt * (0.58 + game.elapsed * 0.0035 + (game.combo > 4 ? 0.12 : 0));
+        }
+
+        const poweredLanes = powerLanes(game);
+        if (hasPowerup(game, "titan")) {
+          for (const target of game.targets) if (!target.resolved && poweredLanes.includes(target.lane) && target.z > -7 && target.z < 7) resolvePowerHit(target, "titan");
+          for (const item of game.items) if (!item.resolved && poweredLanes.includes(item.lane) && item.z > -5 && item.z < 7) {
+            item.resolved = true; game.score += 35;
+            game.powerStrikes.push({ id: ++game.strikeId, kind: "titan", fromLane: game.selectedLane, toLane: item.lane, targetZ: item.z, bornAt: game.elapsed });
+          }
+          const crushed = game.pursuers.filter((pursuer) => poweredLanes.some((lane) => Math.abs(pursuer.lane - lane) < 0.34) && pursuer.gap < 4.6);
+          if (crushed.length) { game.score += crushed.length * 60; game.pursuers = game.pursuers.filter((pursuer) => !crushed.includes(pursuer)); }
+        }
+        if (hasPowerup(game, "laser") && game.elapsed >= game.nextLaserAt) {
+          const laserTarget = game.targets.filter((target) => !target.resolved && target.lane === game.selectedLane && target.z > -58 && target.z < 4).sort((a, b) => b.z - a.z)[0];
+          if (laserTarget) { resolvePowerHit(laserTarget, "laser"); game.nextLaserAt = game.elapsed + 0.62; }
+        }
+        if (hasPowerup(game, "long_leg") && game.elapsed >= game.nextKickAt) {
+          const kickTargets = game.targets.filter((target) => !target.resolved && poweredLanes.includes(target.lane) && target.z > -7 && target.z < 6);
+          if (kickTargets.length) {
+            kickTargets.forEach((target) => resolvePowerHit(target, "long_leg"));
+            game.nextKickAt = game.elapsed + 0.72;
+          }
+        }
+        if (hasPowerup(game, "clone")) {
+          const cloneLane = 2 - game.selectedLane;
+          const cloneTarget = game.targets.find((target) => !target.resolved && target.lane === cloneLane && target.z >= SLAP_DISTANCE && target.z < 5.5);
+          if (cloneTarget) resolvePowerHit(cloneTarget, "clone");
+        }
+        for (const target of game.targets) {
+          if (!target.resolved && target.z >= SLAP_DISTANCE && target.z < 5.5 && target.lane === game.selectedLane && Math.abs(game.playerLane - target.lane) < 0.22) resolveSlap(target);
         }
 
         for (const item of game.items) {
@@ -449,7 +609,10 @@ export default function CorporateWarsGame() {
             }
           }
           if (item.z >= 4.25 && item.z <= 6.25 && item.lane === game.selectedLane && Math.abs(game.playerLane - item.lane) < 0.27) {
-            if (item.type === "table" && jumpProgress > 0.13 && jumpProgress < 0.92) {
+            if (hasPowerup(game, "phase")) {
+              item.resolved = true; game.score += 30; game.focus = Math.min(100, game.focus + 7);
+              game.powerStrikes.push({ id: ++game.strikeId, kind: "phase", fromLane: game.selectedLane, toLane: item.lane, targetZ: item.z, bornAt: game.elapsed });
+            } else if (item.type === "table" && jumpProgress > 0.13 && jumpProgress < 0.92) {
               item.resolved = true; game.dodges += 1; game.score += 45; game.focus = Math.min(100, game.focus + 12);
               showFeedback("TABLE VAULT  +45", "clean"); tone(390, 0.24, "sine", 0.04, 240); tone(840, 0.07, "triangle", 0.018, -120);
             } else if (item.type === "coffee") {
@@ -466,8 +629,14 @@ export default function CorporateWarsGame() {
 
         const caught = game.pursuers.find((pursuer) => pursuer.gap < 0.86 && Math.abs(pursuer.lane - game.playerLane) < 0.3);
         if (caught) {
-          game.pursuers = game.pursuers.filter((pursuer) => pursuer.id !== caught.id); game.suspicion += 24; game.combo = 1; game.stumbleUntil = game.elapsed + 0.55;
-          showFeedback("CAUGHT!  +24% SUSPICION", "danger"); tone(82, 0.4, "sawtooth", 0.08, -30);
+          game.pursuers = game.pursuers.filter((pursuer) => pursuer.id !== caught.id);
+          if (hasPowerup(game, "phase")) {
+            game.score += 55;
+            game.powerStrikes.push({ id: ++game.strikeId, kind: "phase", fromLane: game.selectedLane, toLane: Math.round(caught.lane), targetZ: 5 + caught.gap, bornAt: game.elapsed });
+          } else {
+            game.suspicion += 24; game.combo = 1; game.stumbleUntil = game.elapsed + 0.55;
+            showFeedback("CAUGHT!  +24% SUSPICION", "danger"); tone(82, 0.4, "sawtooth", 0.08, -30);
+          }
         }
 
         if (game.activeEvent && game.elapsed >= game.eventEndsAt) game.activeEvent = null;
@@ -492,10 +661,11 @@ export default function CorporateWarsGame() {
         game.targets = game.targets.filter((target) => target.resolved ? Boolean(target.hitAt !== undefined && game.elapsed - target.hitAt < 0.48) : target.z < 9);
         game.items = game.items.filter((item) => !item.resolved && item.z < 15);
         game.pursuers = game.pursuers.filter((pursuer) => pursuer.gap < 8);
+        game.powerStrikes = game.powerStrikes.filter((strike) => game.elapsed - strike.bornAt < 0.52);
         const remaining = Math.max(0, RUN_SECONDS - game.elapsed);
         if (game.elapsed - game.lastHud >= 0.08) {
           game.lastHud = game.elapsed;
-          setHud({ score: game.score, combo: game.combo, suspicion: Math.min(100, game.suspicion), time: Math.ceil(remaining), distance: Math.round(game.runDistance), focus: game.focus, flow, backHits: game.backHits, sideHits: game.sideHits, pursuers: game.pursuers.length, baits: game.chaserBaits, contractLabel: contract.label, contractProgress: Math.min(contract.target, progress), contractTarget: contract.target, contractDone: game.challengeDone, selectedLane: game.selectedLane, firstHit: game.firstHit, speedFactor: game.speedFactor, jumping: jumpProgress > 0 });
+          setHud({ score: game.score, combo: game.combo, suspicion: Math.min(100, game.suspicion), time: Math.ceil(remaining), distance: Math.round(game.runDistance), focus: game.focus, flow, backHits: game.backHits, sideHits: game.sideHits, pursuers: game.pursuers.length, baits: game.chaserBaits, contractLabel: contract.label, contractProgress: Math.min(contract.target, progress), contractTarget: contract.target, contractDone: game.challengeDone, selectedLane: game.selectedLane, firstHit: game.firstHit, speedFactor: game.speedFactor, jumping: jumpProgress > 0, activePowerups: game.activePowerups.map((powerup) => ({ kind: powerup.kind, remaining: Math.max(0, Math.ceil(powerup.endsAt - game.elapsed)) })), powerupsQueued: game.scheduledPowerups.length + game.mapPowerups.length, aiPlanning: game.powerupBatchPending });
         }
         if (remaining <= 0 || game.suspicion >= 100) finishGame();
       }
@@ -509,13 +679,16 @@ export default function CorporateWarsGame() {
         targets: game.targets.map((target) => ({ id: target.id, lane: target.lane, z: target.z, color: TARGETS[target.type].color, suit: TARGETS[target.type].suit, role: target.type.toUpperCase(), activity: target.activity, seed: target.seed, hitMode: target.hitMode, hitAge: target.hitAt === undefined ? undefined : game.elapsed - target.hitAt })),
         items: game.items.map((item) => ({ id: item.id, lane: item.lane, z: item.z, type: item.type })),
         pursuers: game.pursuers.map((pursuer) => ({ ...pursuer, role: pursuer.type.toUpperCase(), color: TARGETS[pursuer.type].color, suit: TARGETS[pursuer.type].suit })),
+        powerups: game.mapPowerups.map((powerup) => ({ id: powerup.id, lane: powerup.lane, z: powerup.z, kind: powerup.kind, rarity: powerup.rarity })),
+        activePowerups: game.activePowerups.map((powerup) => powerup.kind),
+        strikes: game.powerStrikes.map((strike) => ({ id: strike.id, kind: strike.kind, fromLane: strike.fromLane, toLane: strike.toLane, targetZ: strike.targetZ, age: game.elapsed - strike.bornAt })),
       };
       rendererRef.current?.render(sceneFrame, dt);
       animation = requestAnimationFrame(frame);
     };
     animation = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(animation);
-  }, [displayEvent, fetchNovelty, finishGame, resolveSlap, showFeedback, spawnItem, spawnTarget, spawnWave, tone]);
+  }, [displayEvent, fetchNovelty, fetchPowerupBatch, finishGame, resolvePowerHit, resolveSlap, showFeedback, spawnItem, spawnTarget, spawnWave, tone]);
 
   const onCanvasClick = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -543,6 +716,10 @@ export default function CorporateWarsGame() {
         <div className={`contract-strip ${hud.contractDone ? "done" : ""}`}><span>ACTIVE CONTRACT</span><b>{hud.contractLabel}</b><i>{hud.contractDone ? "COMPLETE" : `${hud.contractProgress}/${hud.contractTarget}`}</i></div>
         <div className={`pursuit-card ${hud.pursuers ? "hot" : ""}`}><span>PURSUIT</span><b>{hud.pursuers || "CLEAR"}</b><small>{hud.pursuers ? "DODGE LATE · LEAVE A CART IN THEIR LANE" : `${hud.baits} CART BAITS`}</small></div>
         <div className={`pace-strip ${hud.jumping ? "airborne" : hud.speedFactor > 1.08 ? "sprinting" : hud.speedFactor < .92 ? "braking" : ""}`}><b>{hud.jumping ? "AIRBORNE" : hud.speedFactor > 1.08 ? "SPRINT" : hud.speedFactor < .92 ? "BRAKE" : "CRUISE"}</b><span><kbd>W</kbd> speed up <kbd>S</kbd> slow down <kbd>SPACE</kbd> jump</span></div>
+        <div className={`powerup-rack ${hud.activePowerups.length ? "powered" : ""}`}>
+          <span className="powerup-planner">AI DROP {hud.aiPlanning ? "PLANNING" : `${hud.powerupsQueued} QUEUED`}</span>
+          <div>{hud.activePowerups.length ? hud.activePowerups.map((powerup) => <b key={powerup.kind} className={`power-${powerup.kind}`}>{POWERUP_LABELS[powerup.kind]} <i>{powerup.remaining}s</i></b>) : <em>Collect a glowing prototype</em>}</div>
+        </div>
         {feedback && <div className={`skill-feedback ${feedback.kind}`}>{feedback.text}</div>}
         {!hud.firstHit && <div className="first-prompt"><kbd>← →</kbd> line up while they are far away <span>· late cuts cause a chase</span></div>}
         <div className="lane-hints" aria-hidden="true">{[1, 2, 3].map((number) => <span key={number} className={hud.selectedLane === number - 1 ? "active" : ""}>{number}</span>)}</div>
@@ -552,7 +729,7 @@ export default function CorporateWarsGame() {
 
       {screen === "start" && <section className="screen-overlay start-screen">
         <div className="start-copy"><div className="eyebrow"><span>REAL 3D OFFICE RUNNER</span><i /> THINK TWO MOVES AHEAD</div><h1>CORPORATE<br /><em>WARS</em></h1>
-          <p>You are the only runner. Control the pace, jump office tables, and read shirt badges from a distance. Every automatic slap now lands with a crisp, satisfying impact.</p>
+          <p>You are the only runner. Control the pace, jump office tables, and chase AI-planned prototype drops. Every minute, Groq schedules up to four glowing power-ups across the three lanes.</p>
           <button className="primary-btn" onClick={startGame}><span>START RUNNING</span><small>ENTER / SPACE</small></button>
           <div className="control-strip"><div><kbd>← →</kbd><span>CHANGE LANE</span></div><div><kbd>W / S</kbd><span>SPRINT / BRAKE</span></div><div><kbd>SPACE</kbd><span>JUMP TABLE</span></div><div><kbd>AUTO</kbd><span>SLAP AT CONTACT</span></div></div>
         </div>
@@ -560,6 +737,7 @@ export default function CorporateWarsGame() {
           <div className="strategy-row clean"><b>01</b><div><strong>APPROACH FROM BEHIND</strong><span>Choose the lane while the employee is far away. Clean hits build Focus and a stronger combo.</span></div></div>
           <div className="strategy-row risk"><b>02</b><div><strong>SIDE HITS CREATE PURSUERS</strong><span>A late lane cut still lands, but the employee turns and chases you down.</span></div></div>
           <div className="strategy-row trap"><b>03</b><div><strong>TURN PRESSURE INTO POINTS</strong><span>Change lanes just before a cart. The slower pursuer follows and takes the collision.</span></div></div>
+          <div className="strategy-row power"><b>04</b><div><strong>READ THE AI DROP ROUTE</strong><span>Titan and Long-Leg cover two lanes; Laser reaches ahead; Phase ignores danger; Echo Clone attacks the mirrored lane.</span></div></div>
           <div className="best-score"><span>PERSONAL BEST</span><strong>{best.toLocaleString()}</strong></div>
           <div className="career-progress"><div><span>{careerRank.name}</span><b>{profile.xp.toLocaleString()} XP</b></div><div className="career-meter"><i style={{ width: `${careerProgress}%` }} /></div><small>{careerRank.next ? `${careerRank.next.xp - profile.xp} XP TO ${careerRank.next.name}` : "CAREER MAXED"}</small></div>
         </aside>

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 export type OfficeActivity = "desk" | "chatting" | "phone" | "presenting";
+export type PowerupKind = "titan" | "laser" | "long_leg" | "phase" | "clone";
 
 export type SceneTarget = {
   id: number;
@@ -17,6 +18,8 @@ export type SceneTarget = {
 
 export type SceneItem = { id: number; lane: number; z: number; type: "cart" | "coffee" | "table" };
 export type ScenePursuer = { id: number; lane: number; gap: number; seed: number; role: string; color: string; suit: string };
+export type ScenePowerup = { id: number; lane: number; z: number; kind: PowerupKind; rarity: "common" | "rare" | "legendary" };
+export type SceneStrike = { id: number; kind: PowerupKind; fromLane: number; toLane: number; targetZ: number; age: number };
 
 export type SceneFrame = {
   running: boolean;
@@ -32,6 +35,9 @@ export type SceneFrame = {
   targets: SceneTarget[];
   items: SceneItem[];
   pursuers: ScenePursuer[];
+  powerups: ScenePowerup[];
+  activePowerups: PowerupKind[];
+  strikes: SceneStrike[];
 };
 
 type Rig = THREE.Group & {
@@ -48,6 +54,13 @@ type Rig = THREE.Group & {
 };
 
 const LANES = [-3.35, 0, 3.35];
+const POWERUP_STYLE: Record<PowerupKind, { color: number; label: string }> = {
+  titan: { color: 0xff8b61, label: "TITAN" },
+  laser: { color: 0xff4f73, label: "LASER" },
+  long_leg: { color: 0xffd75e, label: "KICK" },
+  phase: { color: 0x8e8cff, label: "PHASE" },
+  clone: { color: 0x6fffd3, label: "CLONE" },
+};
 const dark = new THREE.MeshStandardMaterial({ color: 0x132436, roughness: 0.72 });
 const shoe = new THREE.MeshStandardMaterial({ color: 0x071019, roughness: 0.9 });
 
@@ -283,10 +296,14 @@ export class OfficeRunner3D {
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(48, 16 / 9, 0.1, 180);
   private player: Rig;
+  private clone: Rig;
+  private aura = new THREE.Group();
   private targetMeshes = new Map<number, THREE.Group>();
   private itemMeshes = new Map<number, THREE.Group>();
   private pursuerMeshes = new Map<number, Rig>();
   private impactMeshes = new Map<number, THREE.Group>();
+  private powerupMeshes = new Map<number, THREE.Group>();
+  private strikeMeshes = new Map<number, THREE.Object3D>();
   private hallway: THREE.Group[] = [];
   private speedMarkers: THREE.Mesh[] = [];
   private clock = 0;
@@ -320,6 +337,20 @@ export class OfficeRunner3D {
     // Default body front faces -Z, the same direction as the run.
     this.player.rotation.y = 0;
     this.scene.add(this.player);
+    this.clone = createPerson(0x6fffd3, 0x4f8fff, true);
+    this.clone.scale.setScalar(1.04); this.clone.rotation.y = 0; this.clone.visible = false;
+    this.clone.traverse((object) => {
+      if (object instanceof THREE.Mesh && object.material instanceof THREE.MeshStandardMaterial) {
+        object.material = object.material.clone(); object.material.transparent = true; object.material.opacity = 0.42;
+        object.material.emissive.setHex(0x1f8070); object.material.emissiveIntensity = 0.72;
+      }
+    });
+    this.scene.add(this.clone);
+    for (let index = 0; index < 3; index++) {
+      const ring = mesh(new THREE.TorusGeometry(0.72 + index * 0.2, 0.035, 8, 34), new THREE.MeshBasicMaterial({ color: 0x6fffd3, transparent: true, opacity: 0.34, depthWrite: false }), false);
+      ring.rotation.x = Math.PI / 2; ring.position.y = 0.18 + index * 0.18; ring.userData.auraIndex = index; this.aura.add(ring);
+    }
+    this.aura.visible = false; this.scene.add(this.aura);
     this.resize(canvas.clientWidth || 1200, canvas.clientHeight || 700);
   }
 
@@ -455,6 +486,36 @@ export class OfficeRunner3D {
     return group;
   }
 
+  private makePowerup(powerup: ScenePowerup) {
+    const style = POWERUP_STYLE[powerup.kind];
+    const group = new THREE.Group();
+    const core = mesh(new THREE.IcosahedronGeometry(0.48, 2), new THREE.MeshStandardMaterial({ color: style.color, emissive: style.color, emissiveIntensity: 1.4, roughness: 0.28, metalness: 0.22 }));
+    core.position.y = 1.08; core.userData.powerCore = true; group.add(core);
+    for (let index = 0; index < 2; index++) {
+      const ring = mesh(new THREE.TorusGeometry(0.72 + index * 0.17, 0.045, 8, 28), new THREE.MeshBasicMaterial({ color: style.color, transparent: true, opacity: 0.74, depthWrite: false }), false);
+      ring.position.y = 1.08; ring.rotation.x = index ? Math.PI / 2 : 0; ring.userData.powerRing = index; group.add(ring);
+    }
+    const badge = mesh(new THREE.PlaneGeometry(1.35, 0.45), new THREE.MeshBasicMaterial({ map: roleTexture(style.label, style.color), transparent: true, side: THREE.DoubleSide, depthWrite: false }), false);
+    badge.position.set(0, 2.05, 0.05); group.add(badge);
+    const beam = mesh(new THREE.CylinderGeometry(0.03, 0.22, 1.35, 12, 1, true), new THREE.MeshBasicMaterial({ color: style.color, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false }), false);
+    beam.position.y = 0.6; group.add(beam);
+    return group;
+  }
+
+  private makeStrike(strike: SceneStrike) {
+    const style = POWERUP_STYLE[strike.kind];
+    if (strike.kind === "laser") {
+      const points = [new THREE.Vector3(LANES[strike.fromLane], 2.35, 4.6), new THREE.Vector3(LANES[strike.toLane], 2.2, strike.targetZ)];
+      return new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: style.color, transparent: true, opacity: 1, linewidth: 2 }));
+    }
+    const group = new THREE.Group();
+    const ring = mesh(new THREE.TorusGeometry(strike.kind === "titan" ? 1.3 : 0.92, 0.09, 8, 32), new THREE.MeshBasicMaterial({ color: style.color, transparent: true, opacity: 0.85, depthWrite: false }), false);
+    ring.position.set(LANES[strike.toLane], strike.kind === "long_leg" ? 1.15 : 1.8, strike.targetZ);
+    if (strike.kind === "long_leg") ring.rotation.z = Math.PI / 2;
+    group.add(ring);
+    return group;
+  }
+
   render(frame: SceneFrame, dt: number) {
     this.clock += dt;
     this.hallway.forEach((segment) => {
@@ -477,12 +538,45 @@ export class OfficeRunner3D {
     const torsoMaterial = this.player.userData.torso.material;
     if (torsoMaterial instanceof THREE.MeshStandardMaterial) torsoMaterial.color.setHex(frame.flow ? 0x78ffd7 : 0x1bbba0);
     animateRig(this.player, this.clock * (0.72 + frame.speedFactor * 0.32), frame.running, frame.slapPulse);
+    const titanActive = frame.activePowerups.includes("titan");
+    const kickActive = frame.activePowerups.includes("long_leg");
+    const playerScale = titanActive ? 1.72 : 1.1;
+    this.player.scale.lerp(new THREE.Vector3(playerScale, playerScale, playerScale), Math.min(1, dt * 7));
+    const legScale = kickActive ? 1.82 : 1;
+    this.player.userData.leftLeg.scale.y = THREE.MathUtils.lerp(this.player.userData.leftLeg.scale.y, legScale, Math.min(1, dt * 9));
+    this.player.userData.rightLeg.scale.y = THREE.MathUtils.lerp(this.player.userData.rightLeg.scale.y, legScale, Math.min(1, dt * 9));
+    if (kickActive) {
+      const kick = Math.max(0, Math.sin(this.clock * 10.5));
+      this.player.userData.rightLeg.rotation.z = -kick * 0.92;
+      this.player.position.y += 0.62;
+    } else {
+      this.player.userData.leftLeg.rotation.z = THREE.MathUtils.lerp(this.player.userData.leftLeg.rotation.z, 0, Math.min(1, dt * 10));
+      this.player.userData.rightLeg.rotation.z = THREE.MathUtils.lerp(this.player.userData.rightLeg.rotation.z, 0, Math.min(1, dt * 10));
+    }
     if (frame.jumpProgress > 0) {
       this.player.position.y += Math.sin(frame.jumpProgress * Math.PI) * 2.25;
       this.player.rotation.x = -Math.sin(frame.jumpProgress * Math.PI) * 0.17;
     }
     if (frame.stumble) this.player.rotation.x = Math.sin(this.clock * 28) * 0.12;
     else if (frame.jumpProgress <= 0) this.player.rotation.x = THREE.MathUtils.lerp(this.player.rotation.x, 0, Math.min(1, dt * 8));
+
+    const cloneActive = frame.activePowerups.includes("clone");
+    this.clone.visible = cloneActive;
+    if (cloneActive) {
+      const mirrorLane = 2 - Math.round(frame.playerLane);
+      this.clone.position.set(LANES[mirrorLane], this.player.position.y, 5.2);
+      animateRig(this.clone, this.clock * 1.08, frame.running, frame.slapPulse * 0.7);
+    }
+    this.aura.visible = frame.activePowerups.length > 0;
+    if (this.aura.visible) {
+      const primary = POWERUP_STYLE[frame.activePowerups[0]].color;
+      this.aura.position.set(this.player.position.x, 0, 5);
+      this.aura.rotation.y += dt * 1.8;
+      this.aura.children.forEach((child) => {
+        const material = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
+        material.color.setHex(primary); material.opacity = 0.22 + Math.sin(this.clock * 5 + child.userData.auraIndex) * 0.1;
+      });
+    }
 
     const liveTargets = new Set(frame.targets.map((target) => target.id));
     for (const [id, object] of this.targetMeshes) if (!liveTargets.has(id)) { this.scene.remove(object); this.targetMeshes.delete(id); }
@@ -527,6 +621,29 @@ export class OfficeRunner3D {
       if (!object) { object = this.makeItem(item); this.itemMeshes.set(item.id, object); this.scene.add(object); }
       object.position.set(LANES[item.lane], item.type === "coffee" ? Math.sin(this.clock * 4 + item.id) * 0.13 : 0, item.z);
       if (item.type === "coffee") object.rotation.y += dt * 2.5;
+    }
+
+    const livePowerups = new Set(frame.powerups.map((powerup) => powerup.id));
+    for (const [id, object] of this.powerupMeshes) if (!livePowerups.has(id)) { this.scene.remove(object); this.powerupMeshes.delete(id); }
+    for (const powerup of frame.powerups) {
+      let object = this.powerupMeshes.get(powerup.id);
+      if (!object) { object = this.makePowerup(powerup); this.powerupMeshes.set(powerup.id, object); this.scene.add(object); }
+      object.position.set(LANES[powerup.lane], Math.sin(this.clock * 3 + powerup.id) * 0.18, powerup.z);
+      object.rotation.y += dt * 1.45;
+      object.children.forEach((child) => { if (child.userData.powerRing !== undefined) child.rotation.z += dt * (child.userData.powerRing ? -2.1 : 2.6); });
+    }
+
+    const liveStrikes = new Set(frame.strikes.map((strike) => strike.id));
+    for (const [id, object] of this.strikeMeshes) if (!liveStrikes.has(id)) { this.scene.remove(object); this.strikeMeshes.delete(id); }
+    for (const strike of frame.strikes) {
+      let object = this.strikeMeshes.get(strike.id);
+      if (!object) { object = this.makeStrike(strike); this.strikeMeshes.set(strike.id, object); this.scene.add(object); }
+      const fade = Math.max(0, 1 - strike.age * 2.5);
+      object.scale.setScalar(1 + strike.age * 2.8);
+      object.traverse((child) => {
+        if (child instanceof THREE.Line && child.material instanceof THREE.LineBasicMaterial) child.material.opacity = fade;
+        if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshBasicMaterial) child.material.opacity = fade;
+      });
     }
 
     const livePursuers = new Set(frame.pursuers.map((pursuer) => pursuer.id));

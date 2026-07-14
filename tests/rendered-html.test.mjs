@@ -26,10 +26,11 @@ test("server-renders the finished game shell", async () => {
 });
 
 test("ships the strategic 3D loop and keeps the Groq key server-side", async () => {
-  const [game, scene, route, envExample] = await Promise.all([
+  const [game, scene, route, powerupRoute, envExample] = await Promise.all([
     readFile(new URL("../app/components/CorporateWarsGame.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/OfficeRunner3D.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/novelty-event/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/powerup-batch/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../.env.example", import.meta.url), "utf8"),
   ]);
   assert.match(game, /const RUN_SECONDS = 100/);
@@ -59,6 +60,15 @@ test("ships the strategic 3D loop and keeps the Groq key server-side", async () 
   assert.match(game, /triggerJump/);
   assert.match(game, /TABLE VAULT/);
   assert.match(game, /hitStopUntil/);
+  assert.match(game, /fetchPowerupBatch/);
+  assert.match(game, /nextPowerupBatchAt \+= 60/);
+  assert.match(game, /titan/);
+  assert.match(game, /laser/);
+  assert.match(game, /long_leg/);
+  assert.match(game, /phase/);
+  assert.match(game, /clone/);
+  assert.match(game, /powerLanes/);
+  assert.match(game, /AI DROP/);
   assert.match(scene, /"desk" \| "chatting" \| "phone" \| "presenting"/);
   assert.match(scene, /new THREE\.WebGLRenderer/);
   assert.match(scene, /new THREE\.PerspectiveCamera/);
@@ -72,8 +82,15 @@ test("ships the strategic 3D loop and keeps the Groq key server-side", async () 
   assert.match(scene, /new THREE\.SphereGeometry/);
   assert.match(scene, /segment\.position\.z = -108 \+ cycle/);
   assert.match(scene, /this\.camera\.position\.set\(0, 8\.8, 22\.5\)/);
+  assert.match(scene, /makePowerup/);
+  assert.match(scene, /makeStrike/);
+  assert.match(scene, /POWERUP_STYLE/);
   assert.match(route, /process\.env\.GROQ_API_KEY/);
   assert.match(route, /openai\/gpt-oss-20b/);
+  assert.match(powerupRoute, /process\.env\.GROQ_API_KEY/);
+  assert.match(powerupRoute, /strict: true/);
+  assert.match(powerupRoute, /maxItems: 4/);
+  assert.match(powerupRoute, /additionalProperties: false/);
   assert.doesNotMatch(game, /GROQ_API_KEY|NEXT_PUBLIC/);
   assert.doesNotMatch(envExample, /NEXT_PUBLIC_GROQ/);
 });
@@ -84,6 +101,16 @@ test("novelty endpoint fails fast without a secret so the client can use local f
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ score: 100, elapsedSec: 60, difficultyTier: 2, recentEventTypes: [] }),
+  }), env, context);
+  assert.equal(response.status, 503);
+});
+
+test("powerup planner fails fast without a secret so scheduled fallback drops stay available", async () => {
+  const worker = await loadWorker();
+  const response = await worker.fetch(new Request("http://localhost/api/powerup-batch", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ score: 100, elapsedSec: 0, difficultyTier: 1, activePowerups: [], recentKinds: [] }),
   }), env, context);
   assert.equal(response.status, 503);
 });

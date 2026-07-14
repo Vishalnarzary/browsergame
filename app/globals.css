@@ -256,6 +256,34 @@ button:focus-visible { outline: 3px solid var(--mint); outline-offset: 4px; }
 .pace-strip.airborne { border-color: rgba(255,215,94,.56); transform: translateY(-3px); }
 .pace-strip.airborne b { color: var(--yellow); }
 
+.powerup-rack {
+  position: absolute;
+  z-index: 14;
+  top: 227px;
+  left: 50%;
+  min-width: 230px;
+  max-width: min(620px, 70vw);
+  padding: 8px 11px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(201,152,255,.26);
+  border-radius: 9px;
+  background: rgba(6,15,23,.78);
+  box-shadow: 0 10px 32px rgba(0,0,0,.28);
+  text-align: center;
+  pointer-events: none;
+}
+.powerup-rack.powered { border-color: rgba(111,255,211,.54); box-shadow: 0 0 35px rgba(111,255,211,.14); }
+.powerup-planner { display: block; margin-bottom: 5px; color: rgba(201,152,255,.82); font: 900 7px ui-monospace, monospace; letter-spacing: .18em; }
+.powerup-rack > div { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
+.powerup-rack b { padding: 4px 7px; border: 1px solid currentColor; border-radius: 99px; color: var(--mint); font: 900 8px "Arial Black", sans-serif; letter-spacing: .05em; }
+.powerup-rack b i { color: #fff; font-style: normal; }
+.powerup-rack em { color: rgba(230,241,238,.5); font: normal 800 8px ui-monospace, monospace; }
+.powerup-rack .power-titan { color: #ff975e; }
+.powerup-rack .power-laser { color: #ff64ba; }
+.powerup-rack .power-long_leg { color: #ffd75e; }
+.powerup-rack .power-phase { color: #c998ff; }
+.powerup-rack .power-clone { color: #6fffd3; }
+
 .skill-feedback {
   position: absolute;
   z-index: 17;
@@ -426,6 +454,7 @@ kbd {
 .strategy-row.clean > b { background: #6fffd3; }
 .strategy-row.risk > b { background: #ff8b61; }
 .strategy-row.trap > b { background: #ffd75e; }
+.strategy-row.power > b { background: #c998ff; }
 .strategy-row strong { display: block; margin-bottom: 3px; font-size: 9px; letter-spacing: .1em; }
 .strategy-row span { display: block; color: rgba(16,33,42,.68); font-size: 10px; line-height: 1.38; }
 .best-score { display: flex; justify-content: space-between; align-items: end; margin-top: 19px; padding-top: 17px; border-top: 3px solid #10212a; }
@@ -492,6 +521,7 @@ kbd {
   .event-toast { top: 87px; }
   .pursuit-card { top: 171px; }
   .pace-strip { top: 171px; }
+  .powerup-rack { top: 222px; }
   .game-footer { display: none; }
 }
 
@@ -508,6 +538,7 @@ kbd {
   .pursuit-card small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .pace-strip { top: 184px; right: 10px; padding: 8px; }
   .pace-strip span { display: none; }
+  .powerup-rack { top: 241px; min-width: 208px; max-width: calc(100vw - 20px); }
   .first-prompt span { display: none; }
   .game-actions { bottom: 56px; right: 10px; flex-direction: column; }
   .lane-hints { bottom: 17px; }
