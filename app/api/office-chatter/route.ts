@@ -25,7 +25,8 @@ function cleanBatch(value: unknown, recentLines: string[]): ChatterBatch | null 
       .replace(/[^\x20-\x7e]/g, "")
       .replace(/[<>]/g, "")
       .replace(/\s+/g, " ")
-      .trim();
+      .trim()
+      .replace(/^(?:warning|plot twist|reminder|quick update|breaking news|status|tiny request|heads up|update|note|today(?:'s|s) plan|good news|bad news)\s*:\s*/i, "");
     if (text.length > 90) text = `${text.slice(0, 87).replace(/\s+\S*$/, "").trimEnd()}...`;
     if (text.length < 8) return null;
     const normalized = normalizeLine(text);
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
         messages: [
           {
             role: "system",
-            content: "You write short, funny, recognizable office dialogue for a PG arcade game. Return exactly 7 completely new, distinct sentences. Make the office lines playful, with light jokes about deadlines, meetings, spreadsheets, printers, coffee, inboxes, or corporate buzzwords. Every sentence must use a noticeably different opening and structure: mix questions, observations, requests, warnings, reactions, and punchlines. Never begin an office sentence with 'Finish the' and do not repeat an opening phrase within the batch. Each office line needs a small punchline without becoming mean. At least one line must be an encouraging motivational quote about persistence, confidence, or doing great work. Keep every line natural, standalone, under 90 characters, and avoid insults, threats, or sensitive topics. Use ASCII punctuation only: straight apostrophes and hyphens, with no smart quotes, em dashes, or emoji. Never copy, lightly rewrite, or reuse the premise of anything in recentLines.",
+            content: "You write short, funny, recognizable office dialogue for a PG arcade game. Return exactly 7 completely new, distinct sentences. Make the office lines playful, with light jokes about deadlines, meetings, spreadsheets, printers, coffee, inboxes, or corporate buzzwords. Every sentence must use a noticeably different natural opening and structure: mix questions, observations, requests, reactions, and punchlines. Return only the dialogue itself. Do not add category labels or announcement prefixes such as 'Warning:', 'Plot twist:', 'Reminder:', 'Quick update:', 'Breaking news:', 'Status:', 'Note:', 'Heads up:', or 'Today's plan:'. Never begin an office sentence with 'Finish the' and do not repeat an opening phrase within the batch. Each office line needs a small punchline without becoming mean. At least one line must be an encouraging motivational quote about persistence, confidence, or doing great work. Keep every line natural, standalone, under 90 characters, and avoid insults, threats, or sensitive topics. Use ASCII punctuation only: straight apostrophes and hyphens, with no smart quotes, em dashes, or emoji. Never copy, lightly rewrite, or reuse the premise of anything in recentLines.",
           },
           { role: "user", content: JSON.stringify(context) },
         ],

@@ -9,25 +9,29 @@ const STRENGTHS = ["steady effort", "persistence", "good judgment", "calm focus"
 const RESULTS = ["turn chaos into progress", "make difficult work possible", "carry you through the deadline", "build something excellent", "create your next success", "outlast every awkward meeting", "make today count", "open the next door", "move the whole team forward", "beat the toughest spreadsheet", "make future you proud", "win the long game"];
 
 const OFFICE_TEMPLATES = [
-  (task: string, deadline: string, joke: string) => `Quick update: the ${task} is due ${deadline}, and ${joke}.`,
+  (task: string, deadline: string, joke: string) => `The ${task} is due ${deadline}, and ${joke}.`,
   (task: string, _deadline: string, joke: string) => `Has anyone seen the ${task}? Apparently ${joke}.`,
-  (task: string) => `Plot twist: the ${task} was the meeting all along.`,
+  (task: string) => `Somehow, the ${task} was the meeting all along.`,
   (task: string) => `The ${task} called; it wants fewer meetings and more snacks.`,
-  (task: string) => `Today's plan: tame the ${task}, then negotiate with the coffee machine.`,
+  (task: string) => `Today I will tame the ${task}, then negotiate with the coffee machine.`,
   (task: string) => `I opened the ${task}; now the dashboard needs emotional support.`,
-  (task: string, deadline: string) => `Reminder: ${task} ${deadline}. Bribe the printer if necessary.`,
-  (task: string, _deadline: string, joke: string) => `Breaking news: ${joke}, and the ${task} has witnesses.`,
+  (task: string, deadline: string) => `The ${task} needs help ${deadline}; bribe the printer if necessary.`,
+  (task: string, _deadline: string, joke: string) => `${sentenceCase(joke)}, and the ${task} has witnesses.`,
   (task: string) => `The ${task} is almost ready; define "almost" after coffee.`,
   (task: string) => `Can we circle back to the ${task} after the Wi-Fi returns from lunch?`,
-  (task: string) => `Good news: the ${task} exists. Bad news: it scheduled a meeting.`,
+  (task: string) => `The ${task} exists, but it already scheduled another meeting.`,
   (task: string) => `Please review the ${task}; it has developed strong opinions.`,
   (task: string, deadline: string) => `The ${task} wants approval ${deadline}. It also wants a tiny trophy.`,
   (task: string) => `I gave the ${task} one more column; it demanded a corner office.`,
-  (task: string, _deadline: string, joke: string) => `Status: the ${task} is thriving, but ${joke}.`,
+  (task: string, _deadline: string, joke: string) => `The ${task} is thriving, although ${joke}.`,
   (task: string) => `Who invited the ${task}? It brought twelve tabs and no snacks.`,
   (task: string) => `The ${task} is on track, assuming the track leads to coffee.`,
-  (task: string, deadline: string) => `Tiny request: rescue the ${task} ${deadline}; the stapler is supervising.`,
+  (task: string, deadline: string) => `Please rescue the ${task} ${deadline}; the stapler is supervising.`,
 ] as const;
+
+function sentenceCase(text: string) {
+  return text ? `${text[0].toUpperCase()}${text.slice(1)}` : text;
+}
 
 const MOTIVATION_TEMPLATES = [
   (_action: string, strength: string, result: string) => `Your ${strength} can ${result}; take the next step.`,
