@@ -29,6 +29,10 @@ The game is fully playable without an API key and silently uses bundled fallback
 
 The secrets are read only by server routes under `app/api`. They are never sent to the browser. Requests have a short timeout, structured JSON schemas, server-side validation, and automatic in-game fallbacks.
 
+## Deploy with Vercel
+
+Import the GitHub repository into Vercel and keep the root directory as the repository root. The included Vercel configuration selects Next.js and runs the verified `npm run vercel-build` command. Before deploying, add `GROQ_API_KEY` as a sensitive environment variable and set `GROQ_MODEL` and `GROQ_CHATTER_MODEL` to `openai/gpt-oss-20b`. Apply them to Production and Preview, then deploy. Future pushes to `main` automatically create production deployments.
+
 ## Controls
 
 - The hero runs forward and slaps automatically.
