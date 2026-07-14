@@ -24,8 +24,11 @@ The secret is read only by `app/api/novelty-event/route.ts`. It is never sent to
 - The hero runs forward and slaps automatically.
 - Click a lane, or press `1`–`3`, to move into it.
 - Use `←` / `→` or `A` / `D` to switch lanes.
+- Hold `W` to sprint and hold `S` to brake. The pace changes smoothly rather than snapping.
+- Press `Space` during a run to jump office tables for a vault bonus.
 - Choose a target lane while it is far away for a clean back hit. Cutting in late causes a side hit and starts a chase.
 - Pursuers change lanes more slowly than the hero. Leave a mail cart in their lane to score a tactical bait.
+- Automatic slaps use a full arm follow-through, a brief impact pause, expanding rings, particles, and layered impact audio.
 - Press `Esc` to pause or resume.
 - Press `Enter` to start or replay.
 

@@ -232,6 +232,30 @@ button:focus-visible { outline: 3px solid var(--mint); outline-offset: 4px; }
 .pursuit-card.hot { border-color: rgba(255,61,97,.48); border-left-color: var(--danger); box-shadow: 0 0 28px rgba(255,61,97,.13); }
 .pursuit-card.hot span, .pursuit-card.hot b { color: #ff6b85; }
 
+.pace-strip {
+  position: absolute;
+  z-index: 14;
+  top: 178px;
+  right: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 8px;
+  background: rgba(6,15,23,.8);
+  box-shadow: 0 10px 26px rgba(0,0,0,.24);
+  pointer-events: none;
+}
+.pace-strip b { color: #dcece7; font: 900 9px "Arial Black", sans-serif; letter-spacing: .11em; }
+.pace-strip span { color: rgba(229,243,238,.55); font-size: 8px; font-weight: 800; }
+.pace-strip kbd { min-height: 18px; padding: 2px 5px; margin-left: 4px; font-size: 8px; }
+.pace-strip.sprinting { border-color: rgba(111,255,211,.5); box-shadow: 0 0 30px rgba(111,255,211,.12); }
+.pace-strip.sprinting b { color: var(--mint); }
+.pace-strip.braking b { color: var(--yellow); }
+.pace-strip.airborne { border-color: rgba(255,215,94,.56); transform: translateY(-3px); }
+.pace-strip.airborne b { color: var(--yellow); }
+
 .skill-feedback {
   position: absolute;
   z-index: 17;
@@ -327,6 +351,8 @@ kbd {
   touch-action: manipulation;
 }
 .runner-controls button:hover { transform: translateY(-2px); border-color: rgba(111,255,211,.55); color: var(--mint); }
+.runner-controls .jump-control { width: 72px; color: var(--ink); background: var(--yellow); border-color: #ffe798; font: 900 9px "Arial Black", sans-serif; letter-spacing: .08em; box-shadow: 0 9px 25px rgba(0,0,0,.3), 0 0 22px rgba(255,215,94,.16); }
+.runner-controls .jump-control:hover { color: var(--ink); border-color: #fff2b6; }
 
 .screen-overlay {
   position: absolute;
@@ -465,6 +491,7 @@ kbd {
   .suspicion-card small { display: none; }
   .event-toast { top: 87px; }
   .pursuit-card { top: 171px; }
+  .pace-strip { top: 171px; }
   .game-footer { display: none; }
 }
 
@@ -479,6 +506,8 @@ kbd {
   .contract-strip { top: 128px; left: 10px; width: 205px; }
   .pursuit-card { top: 184px; left: 10px; width: 205px; }
   .pursuit-card small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .pace-strip { top: 184px; right: 10px; padding: 8px; }
+  .pace-strip span { display: none; }
   .first-prompt span { display: none; }
   .game-actions { bottom: 56px; right: 10px; flex-direction: column; }
   .lane-hints { bottom: 17px; }

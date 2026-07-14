@@ -15,7 +15,7 @@ export type SceneTarget = {
   hitAge?: number;
 };
 
-export type SceneItem = { id: number; lane: number; z: number; type: "cart" | "coffee" };
+export type SceneItem = { id: number; lane: number; z: number; type: "cart" | "coffee" | "table" };
 export type ScenePursuer = { id: number; lane: number; gap: number; seed: number; role: string; color: string; suit: string };
 
 export type SceneFrame = {
@@ -25,6 +25,8 @@ export type SceneFrame = {
   playerLane: number;
   targetLane: number;
   slapPulse: number;
+  jumpProgress: number;
+  speedFactor: number;
   flow: boolean;
   stumble: boolean;
   targets: SceneTarget[];
@@ -39,6 +41,7 @@ type Rig = THREE.Group & {
     leftLeg: THREE.Group;
     rightLeg: THREE.Group;
     torso: THREE.Mesh;
+    rightHand: THREE.Mesh;
     activity?: OfficeActivity;
     seed?: number;
   };
@@ -65,17 +68,17 @@ function limb(material: THREE.Material, length: number, radius: number) {
 
 function roleTexture(label: string, color: number) {
   const canvas = document.createElement("canvas");
-  canvas.width = 256; canvas.height = 96;
+  canvas.width = 384; canvas.height = 128;
   const context = canvas.getContext("2d")!;
   context.fillStyle = "#f8fff8";
-  context.roundRect(5, 5, 246, 86, 15); context.fill();
+  context.fillRect(6, 6, 372, 116);
   context.strokeStyle = `#${color.toString(16).padStart(6, "0")}`;
-  context.lineWidth = 9; context.stroke();
+  context.lineWidth = 12; context.stroke();
   context.fillStyle = "#10212a";
-  const size = label.length > 9 ? 27 : label.length > 6 ? 32 : 39;
+  const size = label.length > 9 ? 43 : label.length > 6 ? 50 : 62;
   context.font = `900 ${size}px Arial`;
   context.textAlign = "center"; context.textBaseline = "middle";
-  context.fillText(label, 128, 51);
+  context.fillText(label, 192, 68);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
@@ -85,10 +88,10 @@ function roleTexture(label: string, color: number) {
 function addRolePatch(group: THREE.Group, label: string, color: number) {
   if (!label) return;
   const material = new THREE.MeshBasicMaterial({ map: roleTexture(label, color), transparent: true, side: THREE.DoubleSide, depthWrite: false });
-  const back = mesh(new THREE.PlaneGeometry(0.68, 0.255), material, false);
-  back.position.set(0, 2.23, 0.34);
-  const front = mesh(new THREE.PlaneGeometry(0.68, 0.255), material, false);
-  front.position.set(0, 2.23, -0.34); front.rotation.y = Math.PI;
+  const back = mesh(new THREE.PlaneGeometry(0.98, 0.36), material, false);
+  back.position.set(0, 2.28, 0.365);
+  const front = mesh(new THREE.PlaneGeometry(0.98, 0.36), material, false);
+  front.position.set(0, 2.28, -0.365); front.rotation.y = Math.PI;
   group.add(back, front);
 }
 
@@ -167,7 +170,7 @@ function createPerson(bodyColor: number, accentColor: number, runner = false, ro
 
   addRolePatch(group, roleLabel, bodyColor);
 
-  group.userData = { leftArm, rightArm, leftLeg, rightLeg, torso };
+  group.userData = { leftArm, rightArm, leftLeg, rightLeg, torso, rightHand };
   return group;
 }
 
@@ -246,12 +249,16 @@ function animateRig(rig: Rig, time: number, runner: boolean, slapPulse = 0) {
   const cycle = time * (runner ? 12 : 2.2) + (rig.userData.seed ?? 0);
   if (runner) {
     const swing = Math.sin(cycle) * 0.86;
+    const slapWave = slapPulse > 0 ? Math.sin((1 - slapPulse) * Math.PI) : 0;
     rig.userData.leftLeg.rotation.x = swing;
     rig.userData.rightLeg.rotation.x = -swing;
     rig.userData.leftArm.rotation.x = -swing * 0.85;
-    rig.userData.rightArm.rotation.x = swing * 0.85 - slapPulse * 2.3;
-    rig.userData.rightArm.rotation.z = -slapPulse * 1.1;
+    rig.userData.rightArm.rotation.x = swing * 0.72 - slapWave * 0.48;
+    rig.userData.rightArm.rotation.y = -slapWave * 0.72;
+    rig.userData.rightArm.rotation.z = -slapWave * 1.55;
     rig.userData.torso.rotation.z = Math.sin(cycle * 0.5) * 0.035;
+    rig.userData.torso.rotation.y = slapWave * 0.38;
+    rig.userData.rightHand.scale.set(1 + slapWave * 0.45, 0.88 + slapWave * 0.18, 1 + slapWave * 0.62);
     rig.position.y = Math.abs(Math.sin(cycle)) * 0.085;
   } else if (rig.userData.activity === "chatting") {
     rig.userData.leftArm.rotation.z = Math.sin(cycle) * 0.35;
@@ -279,7 +286,9 @@ export class OfficeRunner3D {
   private targetMeshes = new Map<number, THREE.Group>();
   private itemMeshes = new Map<number, THREE.Group>();
   private pursuerMeshes = new Map<number, Rig>();
+  private impactMeshes = new Map<number, THREE.Group>();
   private hallway: THREE.Group[] = [];
+  private speedMarkers: THREE.Mesh[] = [];
   private clock = 0;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -329,6 +338,15 @@ export class OfficeRunner3D {
       line.position.set(x, 0.012, -52);
       this.scene.add(line);
     }
+    const streakMaterial = new THREE.MeshBasicMaterial({ color: 0xb7ffe9, transparent: true, opacity: 0.14, side: THREE.DoubleSide });
+    for (let i = 0; i < 30; i++) {
+      const streak = mesh(new THREE.PlaneGeometry(0.055, 1.2), streakMaterial.clone(), false);
+      streak.rotation.x = -Math.PI / 2;
+      streak.position.set(LANES[i % 3] + ((i % 2) - 0.5) * 1.15, 0.02, -100 + i * 4);
+      streak.userData.baseZ = i * 4;
+      this.speedMarkers.push(streak);
+      this.scene.add(streak);
+    }
     const wallMat = new THREE.MeshStandardMaterial({ color: 0x182e40, roughness: 0.84 });
     for (const x of [-8.5, 8.5]) {
       const wall = mesh(new THREE.PlaneGeometry(140, 7.5), wallMat, false);
@@ -368,7 +386,10 @@ export class OfficeRunner3D {
   }
 
   private makeTarget(target: SceneTarget) {
-    return createActivityScene(target.activity, Number.parseInt(target.color.slice(1), 16), Number.parseInt(target.suit.slice(1), 16), target.seed, target.role);
+    const scene = createActivityScene(target.activity, Number.parseInt(target.color.slice(1), 16), Number.parseInt(target.suit.slice(1), 16), target.seed, target.role);
+    // Employees face toward the incoming runner, opposite the hero's -Z direction.
+    scene.rotation.y = Math.PI;
+    return scene;
   }
 
   private makeItem(item: SceneItem) {
@@ -393,7 +414,7 @@ export class OfficeRunner3D {
       handle.position.set(-1.25, 1.5, 0);
       handle.rotation.z = -0.17;
       group.add(handle);
-    } else {
+    } else if (item.type === "coffee") {
       const cup = mesh(new THREE.CylinderGeometry(0.28, 0.22, 0.72, 12), new THREE.MeshStandardMaterial({ color: 0xf5efe4 }));
       cup.position.y = 0.52;
       const lid = mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.1, 12), new THREE.MeshStandardMaterial({ color: 0x143849 }));
@@ -402,7 +423,35 @@ export class OfficeRunner3D {
       glow.position.y = 0.35;
       glow.rotation.x = Math.PI / 2;
       group.add(cup, lid, glow);
+    } else {
+      const top = mesh(new THREE.CapsuleGeometry(0.22, 1.7, 5, 12), new THREE.MeshStandardMaterial({ color: 0x9b6848, roughness: 0.72 }));
+      top.rotation.z = Math.PI / 2; top.scale.z = 2.5; top.position.y = 1.12;
+      group.add(top);
+      for (const x of [-0.88, 0.88]) for (const z of [-0.36, 0.36]) {
+        const leg = mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.02, 9), new THREE.MeshStandardMaterial({ color: 0x4a5963, metalness: 0.35, roughness: 0.45 }));
+        leg.position.set(x, 0.53, z); group.add(leg);
+      }
+      const edge = mesh(new THREE.BoxGeometry(2.35, 0.1, 0.13), new THREE.MeshBasicMaterial({ color: 0xffd75e }));
+      edge.position.set(0, 1.18, 0.58); group.add(edge);
     }
+    return group;
+  }
+
+  private makeImpact(target: SceneTarget) {
+    const group = new THREE.Group();
+    const color = target.hitMode === "back" ? 0x6fffd3 : 0xff6f61;
+    for (let index = 0; index < 3; index++) {
+      const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 - index * 0.2, depthWrite: false });
+      const ring = mesh(new THREE.TorusGeometry(0.45 + index * 0.18, 0.045, 8, 30), material, false);
+      ring.userData.ringIndex = index; group.add(ring);
+    }
+    for (let index = 0; index < 18; index++) {
+      const angle = (index / 18) * Math.PI * 2;
+      const particle = mesh(new THREE.SphereGeometry(0.045 + (index % 3) * 0.018, 7, 5), new THREE.MeshBasicMaterial({ color: index % 3 === 0 ? 0xffffff : color, transparent: true, depthWrite: false }), false);
+      particle.userData.direction = new THREE.Vector3(Math.cos(angle), Math.sin(angle), (index % 2 ? 1 : -1) * 0.28);
+      group.add(particle);
+    }
+    group.position.set(LANES[target.lane], 2.25, target.z + 0.25);
     return group;
   }
 
@@ -413,6 +462,12 @@ export class OfficeRunner3D {
       const cycle = (segment.userData.baseZ + frame.distance * 0.78) % 132;
       segment.position.z = -108 + cycle;
     });
+    this.speedMarkers.forEach((marker) => {
+      marker.position.z = -100 + ((marker.userData.baseZ + frame.distance * 0.95) % 120);
+      marker.scale.y = 0.72 + frame.speedFactor * 1.15;
+      const material = marker.material as THREE.MeshBasicMaterial;
+      material.opacity = 0.07 + frame.speedFactor * 0.1;
+    });
 
     const desiredPlayerX = LANES[0] + (LANES[2] - LANES[0]) * (frame.playerLane / 2);
     const playerX = THREE.MathUtils.lerp(this.player.position.x, desiredPlayerX, Math.min(1, dt * 13));
@@ -421,9 +476,13 @@ export class OfficeRunner3D {
     this.player.rotation.z = THREE.MathUtils.lerp(this.player.rotation.z, -lateral * 0.7, Math.min(1, dt * 12));
     const torsoMaterial = this.player.userData.torso.material;
     if (torsoMaterial instanceof THREE.MeshStandardMaterial) torsoMaterial.color.setHex(frame.flow ? 0x78ffd7 : 0x1bbba0);
-    animateRig(this.player, this.clock, frame.running, frame.slapPulse);
+    animateRig(this.player, this.clock * (0.72 + frame.speedFactor * 0.32), frame.running, frame.slapPulse);
+    if (frame.jumpProgress > 0) {
+      this.player.position.y += Math.sin(frame.jumpProgress * Math.PI) * 2.25;
+      this.player.rotation.x = -Math.sin(frame.jumpProgress * Math.PI) * 0.17;
+    }
     if (frame.stumble) this.player.rotation.x = Math.sin(this.clock * 28) * 0.12;
-    else this.player.rotation.x = THREE.MathUtils.lerp(this.player.rotation.x, 0, Math.min(1, dt * 8));
+    else if (frame.jumpProgress <= 0) this.player.rotation.x = THREE.MathUtils.lerp(this.player.rotation.x, 0, Math.min(1, dt * 8));
 
     const liveTargets = new Set(frame.targets.map((target) => target.id));
     for (const [id, object] of this.targetMeshes) if (!liveTargets.has(id)) { this.scene.remove(object); this.targetMeshes.delete(id); }
@@ -438,6 +497,27 @@ export class OfficeRunner3D {
         object.position.x += (target.hitMode === "side" ? 1 : -1) * age * 2.2;
       }
       walkRigs(object, (rig) => animateRig(rig, this.clock, false));
+    }
+
+    const hitTargets = frame.targets.filter((target) => target.hitMode && target.hitAge !== undefined);
+    const liveImpacts = new Set(hitTargets.map((target) => target.id));
+    for (const [id, object] of this.impactMeshes) if (!liveImpacts.has(id)) { this.scene.remove(object); this.impactMeshes.delete(id); }
+    for (const target of hitTargets) {
+      let impact = this.impactMeshes.get(target.id);
+      if (!impact) { impact = this.makeImpact(target); this.impactMeshes.set(target.id, impact); this.scene.add(impact); }
+      const age = target.hitAge ?? 0;
+      impact.position.set(LANES[target.lane], 2.25, target.z + 0.25);
+      impact.children.forEach((child) => {
+        const material = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
+        if (child.userData.ringIndex !== undefined) {
+          const scale = 1 + age * (3.8 + child.userData.ringIndex * 0.7);
+          child.scale.setScalar(scale); material.opacity = Math.max(0, (0.46 - age) * 2.1) * (1 - child.userData.ringIndex * 0.18);
+        } else {
+          const direction = child.userData.direction as THREE.Vector3;
+          child.position.copy(direction).multiplyScalar(age * 5.4);
+          child.scale.setScalar(1 + age * 2.2); material.opacity = Math.max(0, 1 - age * 2.4);
+        }
+      });
     }
 
     const liveItems = new Set(frame.items.map((item) => item.id));
