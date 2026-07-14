@@ -8,6 +8,7 @@ type TargetType = "colleague" | "manager" | "hr" | "intern" | "ceo";
 type EventType = "spawn_modifier" | "score_modifier" | "hazard_toggle" | "flavor_only";
 type SlapOutcome = "launch" | "arm_break" | "leg_break";
 type ImpactSound = "slap1" | "slap2" | "bone-break";
+type RunStyle = "planner" | "sprinter" | "trickster";
 
 type Target = {
   id: number;
@@ -43,7 +44,8 @@ type ScheduledPowerup = PowerupSpec & { id: number; spawnAt: number };
 type MapPowerup = PowerupSpec & { id: number; z: number; expiresAt: number };
 type ActivePowerup = { kind: PowerupKind; endsAt: number };
 type PowerStrike = { id: number; kind: PowerupKind; fromLane: number; toLane: number; targetZ: number; bornAt: number };
-type CareerProfile = { xp: number; runs: number; badges: string[] };
+type DailyProgress = { date: string; contracts: number; claimed: boolean };
+type CareerProfile = { xp: number; runs: number; badges: string[]; contractChain?: number; daily?: DailyProgress; preferredStyle?: RunStyle };
 type Contract = { label: string; metric: "back" | "baits" | "flow" | "score"; target: number; reward: number };
 
 type NoveltyEvent = {
@@ -117,12 +119,22 @@ type GameData = {
   chatterBatchPending: boolean;
   chatterCursor: number;
   runToken: number;
+  runStyle: RunStyle;
+  comboMilestones: number[];
 };
 
 const RUN_SECONDS = 100;
 const SLAP_MIN = 0.68;
 const SLAP_DISTANCE = 2.35;
 const CLEAN_COMMIT_Z = -25;
+const DAILY_CONTRACT_TARGET = 2;
+const DAILY_REWARD = 300;
+
+const RUN_STYLES: Record<RunStyle, { label: string; kicker: string; detail: string }> = {
+  planner: { label: "ROUTE PLANNER", kicker: "WIDER CLEAN WINDOW", detail: "Commit a little later and gain extra Focus from clean hits." },
+  sprinter: { label: "PACE SETTER", kicker: "FASTER TOP SPEED", detail: "Sprint harder to escape pursuers and chase distant drops." },
+  trickster: { label: "CART TRICKSTER", kicker: "BIGGER BAIT PAYOUT", detail: "Cart baits score 75% more and build extra Focus." },
+};
 
 const TARGETS: Record<TargetType, { points: number; color: string; suit: string }> = {
   colleague: { points: 14, color: "#f5d36f", suit: "#557c91" },
@@ -198,9 +210,15 @@ const defaultHud = {
   contractProgress: 0, contractTarget: CONTRACTS[0].target, contractDone: false, selectedLane: 1, firstHit: false,
   speedFactor: 1, jumping: false,
   activePowerups: [] as { kind: PowerupKind; remaining: number }[], powerupsQueued: 0, aiPlanning: false,
+  pbDelta: 0,
 };
 
 function clamp(value: number, min: number, max: number) { return Math.max(min, Math.min(max, value)); }
+function todayKey() { return new Date().toISOString().slice(0, 10); }
+function dailyProgress(profile: CareerProfile): DailyProgress {
+  const today = todayKey();
+  return profile.daily?.date === today ? profile.daily : { date: today, contracts: 0, claimed: false };
+}
 function randomActivity(): OfficeActivity {
   const r = Math.random();
   return r < 0.36 ? "desk" : r < 0.7 ? "chatting" : r < 0.86 ? "phone" : "presenting";
@@ -216,7 +234,7 @@ function chooseType(elapsed: number, activeEvent: NoveltyEvent | null): TargetTy
   return "colleague";
 }
 
-function makeGame(challengeIndex = 0): GameData {
+function makeGame(challengeIndex = 0, runStyle: RunStyle = "planner"): GameData {
   return {
     elapsed: 0, score: 0, combo: 1, bestCombo: 1, suspicion: 0, selectedLane: 1, playerLane: 1, previousPlayerLane: 1,
     targets: [], items: [], pursuers: [], nextSpawn: 1.1, nextItem: 8, nextWave: 20, targetId: 0, itemId: 0,
@@ -227,6 +245,7 @@ function makeGame(challengeIndex = 0): GameData {
     scheduledPowerups: [], mapPowerups: [], activePowerups: [], powerStrikes: [], nextPowerupBatchAt: 0,
     powerupBatchPending: false, powerupId: 0, strikeId: 0, nextLaserAt: 0, nextKickAt: 0, lastPowerSoundAt: -10, recentPowerupKinds: [],
     chatterLines: [], recentChatter: [], nextChatterBatchAt: 0, chatterBatchPending: false, chatterCursor: 0, runToken: Math.random(),
+    runStyle, comboMilestones: [],
   };
 }
 
@@ -280,10 +299,11 @@ export default function CorporateWarsGame() {
   const [best, setBest] = useState(0);
   const [muted, setMuted] = useState(false);
   const [profile, setProfile] = useState<CareerProfile>({ xp: 0, runs: 0, badges: [] });
+  const [runStyle, setRunStyle] = useState<RunStyle>("planner");
   const [toast, setToast] = useState<NoveltyEvent | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [feedback, setFeedback] = useState<{ text: string; kind: "clean" | "risk" | "danger" } | null>(null);
-  const [summary, setSummary] = useState({ score: 0, highScore: 0, bestCombo: 1, distance: 0, backHits: 0, sideHits: 0, baits: 0, xp: 0, newRank: "", badges: [] as string[], contractDone: false, newBest: false, caught: false });
+  const [summary, setSummary] = useState({ score: 0, highScore: 0, bestCombo: 1, distance: 0, backHits: 0, sideHits: 0, baits: 0, xp: 0, newRank: "", badges: [] as string[], contractDone: false, newBest: false, caught: false, grade: "C", dailyBonus: 0, chainBonus: 0, contractChain: 0, nextContract: CONTRACTS[1].label, style: "planner" as RunStyle });
 
   useEffect(() => {
     // Keep the server and first browser render identical, then restore local progress.
@@ -292,7 +312,10 @@ export default function CorporateWarsGame() {
       if (Number.isFinite(savedBest)) setBest(savedBest);
       try {
         const saved = JSON.parse(localStorage.getItem("corporate-wars-career") || "null") as CareerProfile | null;
-        if (saved && Number.isFinite(saved.xp) && Array.isArray(saved.badges)) setProfile(saved);
+        if (saved && Number.isFinite(saved.xp) && Array.isArray(saved.badges)) {
+          setProfile(saved);
+          if (saved.preferredStyle && RUN_STYLES[saved.preferredStyle]) setRunStyle(saved.preferredStyle);
+        }
       } catch { /* Ignore malformed local progress. */ }
     });
     return () => cancelAnimationFrame(restoreFrame);
@@ -506,26 +529,41 @@ export default function CorporateWarsGame() {
 
   const startGame = useCallback(() => {
     const contractIndex = profile.runs % CONTRACTS.length;
-    gameRef.current = makeGame(contractIndex);
+    gameRef.current = makeGame(contractIndex, runStyle);
     screenRef.current = "playing"; setScreen("playing");
     const contract = CONTRACTS[contractIndex];
     setHud({ ...defaultHud, contractLabel: contract.label, contractTarget: contract.target });
     setToast(null); setToastVisible(false); setFeedback(null);
     tone(320, 0.14, "triangle", 0.045, 220);
-  }, [profile.runs, tone]);
+  }, [profile.runs, runStyle, tone]);
 
   const finishGame = useCallback(() => {
     const game = gameRef.current;
     const newBest = game.score > best;
     const highScore = Math.max(best, game.score);
     if (newBest) { localStorage.setItem("corporate-wars-best", String(game.score)); setBest(game.score); }
-    const earnedXp = Math.max(35, Math.round(game.score * 0.09 + game.backHits * 10 + game.chaserBaits * 35 + (game.challengeDone ? 120 : 0)));
+    const currentDaily = dailyProgress(profile);
+    const dailyContracts = currentDaily.contracts + (game.challengeDone ? 1 : 0);
+    const dailyBonus = !currentDaily.claimed && dailyContracts >= DAILY_CONTRACT_TARGET ? DAILY_REWARD : 0;
+    const contractChain = (profile.contractChain || 0) + (game.challengeDone ? 1 : 0);
+    const chainBonus = game.challengeDone && contractChain > 0 && contractChain % 3 === 0 ? 180 : 0;
+    const earnedXp = Math.max(35, Math.round(game.score * 0.09 + game.backHits * 10 + game.chaserBaits * 35 + (game.challengeDone ? 120 : 0))) + dailyBonus + chainBonus;
     const candidates = [game.backHits >= 10 ? "SHADOW ROUTE" : "", game.chaserBaits >= 3 ? "CART TACTICIAN" : "", game.sideHits === 0 && game.slaps >= 8 ? "CLEAN HANDS" : "", game.score >= 3000 ? "OVERACHIEVER" : ""].filter(Boolean);
     const newBadges = candidates.filter((badge) => !profile.badges.includes(badge));
-    const nextProfile = { xp: profile.xp + earnedXp, runs: profile.runs + 1, badges: [...profile.badges, ...newBadges] };
+    const nextProfile: CareerProfile = {
+      xp: profile.xp + earnedXp,
+      runs: profile.runs + 1,
+      badges: [...profile.badges, ...newBadges],
+      contractChain,
+      daily: { date: currentDaily.date, contracts: Math.min(DAILY_CONTRACT_TARGET, dailyContracts), claimed: currentDaily.claimed || dailyBonus > 0 },
+      preferredStyle: game.runStyle,
+    };
     const oldRank = rankForXp(profile.xp); const nextRank = rankForXp(nextProfile.xp);
+    const cleanRate = game.slaps ? game.backHits / game.slaps : 0;
+    const grade = game.score >= Math.max(3000, best * 1.05) && cleanRate >= 0.72 ? "S" : game.score >= 2200 && cleanRate >= 0.62 ? "A" : game.score >= 1400 && cleanRate >= 0.48 ? "B" : "C";
+    const nextContract = CONTRACTS[nextProfile.runs % CONTRACTS.length].label;
     localStorage.setItem("corporate-wars-career", JSON.stringify(nextProfile)); setProfile(nextProfile);
-    setSummary({ score: game.score, highScore, bestCombo: game.bestCombo, distance: Math.round(game.runDistance), backHits: game.backHits, sideHits: game.sideHits, baits: game.chaserBaits, xp: earnedXp, newRank: nextRank.index > oldRank.index ? nextRank.name : "", badges: newBadges, contractDone: game.challengeDone, newBest, caught: game.suspicion >= 100 });
+    setSummary({ score: game.score, highScore, bestCombo: game.bestCombo, distance: Math.round(game.runDistance), backHits: game.backHits, sideHits: game.sideHits, baits: game.chaserBaits, xp: earnedXp, newRank: nextRank.index > oldRank.index ? nextRank.name : "", badges: newBadges, contractDone: game.challengeDone, newBest, caught: game.suspicion >= 100, grade, dailyBonus, chainBonus, contractChain, nextContract, style: game.runStyle });
     screenRef.current = "summary"; setScreen("summary"); setToastVisible(false);
     tone(newBest ? 620 : 310, 0.32, "triangle", 0.06, newBest ? 310 : -130);
   }, [best, profile, tone]);
@@ -557,7 +595,8 @@ export default function CorporateWarsGame() {
 
   const resolveSlap = useCallback((target: Target) => {
     const game = gameRef.current;
-    const clean = target.cleanLine && target.alignedAtZ !== undefined && target.alignedAtZ <= CLEAN_COMMIT_Z && Math.abs(game.playerLane - target.lane) < SLAP_MIN * 0.3;
+    const cleanCommitZ = game.runStyle === "planner" ? CLEAN_COMMIT_Z + 7 : CLEAN_COMMIT_Z;
+    const clean = target.cleanLine && target.alignedAtZ !== undefined && target.alignedAtZ <= cleanCommitZ && Math.abs(game.playerLane - target.lane) < SLAP_MIN * 0.3;
     const mode = clean ? "back" : "side";
     const outcomeRoll = Math.random();
     const outcome: SlapOutcome = outcomeRoll < 0.42 ? "launch" : outcomeRoll < 0.72 ? "arm_break" : "leg_break";
@@ -572,7 +611,10 @@ export default function CorporateWarsGame() {
     game.score += points;
     if (clean) {
       game.backHits += 1; game.combo = Math.min(8, Math.round((game.combo + 0.25) * 100) / 100);
-      game.focus = Math.min(100, game.focus + 18); showFeedback(`CLEAN BACK HIT  +${points}`, "clean");
+      game.focus = Math.min(100, game.focus + (game.runStyle === "planner" ? 22 : 18));
+      const milestone = [2, 4, 6].find((value) => game.combo >= value && !game.comboMilestones.includes(value));
+      if (milestone) { game.comboMilestones.push(milestone); showFeedback(`${milestone}x MASTERY CHAIN  KEEP THE LINE`, "clean"); }
+      else showFeedback(`CLEAN BACK HIT  +${points}`, "clean");
       tone(128, 0.16, "sine", 0.07, -48); tone(710, 0.085, "triangle", 0.026, -180);
     } else {
       game.sideHits += 1; game.combo = Math.max(1, Math.round((game.combo - 0.35) * 100) / 100); game.suspicion += target.type === "hr" ? 15 : 7;
@@ -643,7 +685,8 @@ export default function CorporateWarsGame() {
         game.elapsed += dt;
         const flow = game.elapsed < game.flowUntil;
         const stumble = game.elapsed < game.stumbleUntil;
-        const speedTarget = game.speedControl > 0 ? 1.38 : game.speedControl < 0 ? 0.68 : 1;
+        const sprintTop = game.runStyle === "sprinter" ? 1.5 : 1.38;
+        const speedTarget = game.speedControl > 0 ? sprintTop : game.speedControl < 0 ? 0.68 : 1;
         game.speedFactor += (speedTarget - game.speedFactor) * Math.min(1, dt * 5.8);
         const hitStop = game.elapsed < game.hitStopUntil;
         const speed = (11.7 + game.elapsed * 0.045) * game.speedFactor * (stumble ? 0.62 : flow ? 0.88 : 1) * (hitStop ? 0.12 : 1);
@@ -685,7 +728,7 @@ export default function CorporateWarsGame() {
           target.z += speed * dt;
           if (target.lane === game.selectedLane) {
             if (target.alignedAtZ === undefined) target.alignedAtZ = target.z;
-            if (target.z <= CLEAN_COMMIT_Z) target.cleanLine = true;
+            if (target.z <= (game.runStyle === "planner" ? CLEAN_COMMIT_Z + 7 : CLEAN_COMMIT_Z)) target.cleanLine = true;
           } else if (target.z > -18) target.cleanLine = false;
         }
 
@@ -739,8 +782,9 @@ export default function CorporateWarsGame() {
             const trapped = game.pursuers.find((pursuer) => Math.abs(pursuer.lane - item.lane) < 0.32 && Math.abs((5 + pursuer.gap) - item.z) < 1.18);
             if (trapped) {
               item.resolved = true; game.pursuers = game.pursuers.filter((pursuer) => pursuer.id !== trapped.id);
-              game.chaserBaits += 1; game.score += 90 * Math.max(1, Math.floor(game.combo)); game.focus = Math.min(100, game.focus + 22);
-              showFeedback("PURSUER BAITED INTO CART  +90", "clean"); tone(88, 0.34, "square", 0.075, -28); continue;
+              const baitPoints = Math.round(90 * Math.max(1, Math.floor(game.combo)) * (game.runStyle === "trickster" ? 1.75 : 1));
+              game.chaserBaits += 1; game.score += baitPoints; game.focus = Math.min(100, game.focus + (game.runStyle === "trickster" ? 34 : 22));
+              showFeedback(`PURSUER BAITED INTO CART  +${baitPoints}`, "clean"); tone(88, 0.34, "square", 0.075, -28); continue;
             }
           }
           if (item.z >= 4.25 && item.z <= 6.25 && item.lane === game.selectedLane && Math.abs(game.playerLane - item.lane) < 0.27) {
@@ -809,7 +853,8 @@ export default function CorporateWarsGame() {
         const remaining = Math.max(0, RUN_SECONDS - game.elapsed);
         if (game.elapsed - game.lastHud >= 0.08) {
           game.lastHud = game.elapsed;
-          setHud({ score: game.score, combo: game.combo, suspicion: Math.min(100, game.suspicion), time: Math.ceil(remaining), distance: Math.round(game.runDistance), focus: game.focus, flow, backHits: game.backHits, sideHits: game.sideHits, pursuers: game.pursuers.length, baits: game.chaserBaits, contractLabel: contract.label, contractProgress: Math.min(contract.target, progress), contractTarget: contract.target, contractDone: game.challengeDone, selectedLane: game.selectedLane, firstHit: game.firstHit, speedFactor: game.speedFactor, jumping: jumpProgress > 0, activePowerups: game.activePowerups.map((powerup) => ({ kind: powerup.kind, remaining: Math.max(0, Math.ceil(powerup.endsAt - game.elapsed)) })), powerupsQueued: game.scheduledPowerups.length + game.mapPowerups.length, aiPlanning: game.powerupBatchPending });
+          const expectedBest = best > 0 ? Math.round(best * clamp(game.elapsed / RUN_SECONDS, 0, 1)) : 0;
+          setHud({ score: game.score, combo: game.combo, suspicion: Math.min(100, game.suspicion), time: Math.ceil(remaining), distance: Math.round(game.runDistance), focus: game.focus, flow, backHits: game.backHits, sideHits: game.sideHits, pursuers: game.pursuers.length, baits: game.chaserBaits, contractLabel: contract.label, contractProgress: Math.min(contract.target, progress), contractTarget: contract.target, contractDone: game.challengeDone, selectedLane: game.selectedLane, firstHit: game.firstHit, speedFactor: game.speedFactor, jumping: jumpProgress > 0, activePowerups: game.activePowerups.map((powerup) => ({ kind: powerup.kind, remaining: Math.max(0, Math.ceil(powerup.endsAt - game.elapsed)) })), powerupsQueued: game.scheduledPowerups.length + game.mapPowerups.length, aiPlanning: game.powerupBatchPending, pbDelta: game.score - expectedBest });
         }
         if (remaining <= 0 || game.suspicion >= 100) finishGame();
       }
@@ -832,7 +877,7 @@ export default function CorporateWarsGame() {
     };
     animation = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(animation);
-  }, [displayEvent, fetchChatterBatch, fetchNovelty, fetchPowerupBatch, finishGame, playSlapImpact, resolvePowerHit, resolveSlap, showFeedback, spawnItem, spawnTarget, spawnWave, tone]);
+  }, [best, displayEvent, fetchChatterBatch, fetchNovelty, fetchPowerupBatch, finishGame, playSlapImpact, resolvePowerHit, resolveSlap, showFeedback, spawnItem, spawnTarget, spawnWave, tone]);
 
   const onCanvasClick = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -844,6 +889,8 @@ export default function CorporateWarsGame() {
   const suspicionColor = hud.suspicion > 72 ? "danger" : hud.suspicion > 38 ? "warn" : "safe";
   const careerRank = rankForXp(profile.xp);
   const careerProgress = careerRank.next ? clamp(((profile.xp - careerRank.xp) / (careerRank.next.xp - careerRank.xp)) * 100, 0, 100) : 100;
+  const daily = dailyProgress(profile);
+  const chainProgress = (profile.contractChain || 0) % 3;
 
   return <main className="game-shell">
     <div className={`game-stage suspicion-${suspicionColor}`}>
@@ -852,7 +899,7 @@ export default function CorporateWarsGame() {
 
       {(screen === "playing" || screen === "paused") && <>
         <section className="hud" aria-label="Game status">
-          <div className="hud-card score-card"><span className="hud-label">PRODUCTIVITY</span><strong>{hud.score.toLocaleString()}</strong><span className="combo">×{hud.combo.toFixed(2)} COMBO · {hud.backHits} CLEAN</span></div>
+          <div className="hud-card score-card"><span className="hud-label">PRODUCTIVITY</span><strong>{hud.score.toLocaleString()}</strong><span className="combo">×{hud.combo.toFixed(2)} COMBO · {hud.backHits} CLEAN</span>{best > 0 && <small className={hud.pbDelta >= 0 ? "pb-ahead" : "pb-behind"}>PB PACE {hud.pbDelta >= 0 ? "+" : ""}{hud.pbDelta.toLocaleString()}</small>}</div>
           <div className={`timer-card ${hud.time <= 10 ? "timer-danger" : ""}`}><span>{hud.distance}M · {hud.speedFactor.toFixed(2)}× PACE</span><strong>{String(Math.floor(hud.time / 60)).padStart(2, "0")}:{String(hud.time % 60).padStart(2, "0")}</strong><div className={`focus-mini ${hud.flow ? "flowing" : ""}`}><i style={{ width: `${hud.flow ? 100 : hud.focus}%` }} /><b>{hud.flow ? "FLOW ×2" : "FOCUS"}</b></div></div>
           <div className="hud-card suspicion-card"><div className="suspicion-head"><span className="hud-label">SUSPICION</span><b>{Math.round(hud.suspicion)}%</b></div><div className="meter"><i style={{ width: `${hud.suspicion}%` }} /></div><small>{hud.pursuers ? `${hud.pursuers} PURSUER${hud.pursuers > 1 ? "S" : ""} CLOSING` : hud.suspicion > 45 ? "KEEP IT CASUAL" : "ROUTE IS CLEAN"}</small></div>
         </section>
@@ -874,6 +921,8 @@ export default function CorporateWarsGame() {
       {screen === "start" && <section className="screen-overlay start-screen">
         <div className="start-copy"><div className="eyebrow"><span>REAL 3D OFFICE RUNNER</span><i /> THINK TWO MOVES AHEAD</div><h1>CORPORATE<br /><em>WARS</em></h1>
           <p>You are the only runner. Control the pace, jump office tables, and chase AI-planned prototype drops. Every minute, Groq schedules up to four glowing power-ups across the three lanes.</p>
+          <div className={`daily-brief ${daily.claimed ? "claimed" : ""}`}><div><span>DAILY BRIEF</span><b>{daily.claimed ? "BONUS SECURED" : `COMPLETE ${DAILY_CONTRACT_TARGET} CONTRACTS`}</b></div><strong>{daily.contracts}/{DAILY_CONTRACT_TARGET}</strong><small>{daily.claimed ? "Come back tomorrow for a fresh briefing" : `+${DAILY_REWARD} XP · no missed-day penalty`}</small></div>
+          <div className="style-picker" aria-label="Choose a run style"><span>CHOOSE YOUR RUN STYLE</span><div>{(Object.keys(RUN_STYLES) as RunStyle[]).map((style) => <button key={style} className={runStyle === style ? "selected" : ""} onClick={() => setRunStyle(style)}><b>{RUN_STYLES[style].label}</b><small>{RUN_STYLES[style].kicker}</small></button>)}</div><p>{RUN_STYLES[runStyle].detail}</p></div>
           <button className="primary-btn" onClick={startGame}><span>START RUNNING</span><small>ENTER / SPACE</small></button>
           <div className="control-strip"><div><kbd>← →</kbd><span>CHANGE LANE</span></div><div><kbd>W / S</kbd><span>SPRINT / BRAKE</span></div><div><kbd>SPACE</kbd><span>JUMP TABLE</span></div><div><kbd>AUTO</kbd><span>SLAP AT CONTACT</span></div></div>
         </div>
@@ -884,6 +933,7 @@ export default function CorporateWarsGame() {
           <div className="strategy-row power"><b>04</b><div><strong>READ THE AI DROP ROUTE</strong><span>Titan and Long-Leg cover two lanes; Laser reaches ahead; Phase ignores danger; Echo Clone attacks the mirrored lane.</span></div></div>
           <div className="best-score"><span>PERSONAL BEST</span><strong>{best.toLocaleString()}</strong></div>
           <div className="career-progress"><div><span>{careerRank.name}</span><b>{profile.xp.toLocaleString()} XP</b></div><div className="career-meter"><i style={{ width: `${careerProgress}%` }} /></div><small>{careerRank.next ? `${careerRank.next.xp - profile.xp} XP TO ${careerRank.next.name}` : "CAREER MAXED"}</small></div>
+          <div className="mastery-chain"><span>MASTERY CHAIN</span><b>{profile.contractChain || 0} CONTRACTS BANKED</b><div>{[0, 1, 2].map((slot) => <i key={slot} className={slot < chainProgress ? "filled" : ""} />)}</div><small>{chainProgress === 0 && (profile.contractChain || 0) > 0 ? "BONUS CLAIMED · START THE NEXT SET" : `${3 - chainProgress} MORE FOR +180 XP`}</small></div>
         </aside>
       </section>}
 
@@ -891,9 +941,11 @@ export default function CorporateWarsGame() {
 
       {screen === "summary" && <section className="screen-overlay summary-screen"><div className="summary-card"><div className="eyebrow"><span>SHIFT REPORT</span></div><h2>{summary.caught ? "ESCORTED\nOUT" : "CLOCKED\nOUT"}</h2>
         {summary.newBest && <div className="new-record">NEW PERSONAL BEST</div>}
+        <div className={`mastery-grade grade-${summary.grade.toLowerCase()}`}><span>ROUTE GRADE</span><b>{summary.grade}</b><small>{RUN_STYLES[summary.style].label}</small></div>
         <div className="final-score"><span>PRODUCTIVITY</span><strong>{summary.score.toLocaleString()}</strong></div>
         <div className="summary-stats"><div><span>CLEAN HITS</span><b>{summary.backHits}</b></div><div><span>RISKY HITS</span><b>{summary.sideHits}</b></div><div><span>CART BAITS</span><b>{summary.baits}</b></div><div><span>BEST COMBO</span><b>×{summary.bestCombo.toFixed(2)}</b></div><div><span>DISTANCE</span><b>{summary.distance}M</b></div></div>
-        <div className="run-rewards"><b>+{summary.xp} CAREER XP</b>{summary.contractDone && <span>CONTRACT COMPLETE</span>}{summary.newRank && <span>PROMOTED: {summary.newRank}</span>}{summary.badges.map((badge) => <span key={badge}>BADGE: {badge}</span>)}</div>
+        <div className="run-rewards"><b>+{summary.xp} CAREER XP</b>{summary.contractDone && <span>CONTRACT COMPLETE</span>}{summary.dailyBonus > 0 && <span>DAILY BONUS +{summary.dailyBonus}</span>}{summary.chainBonus > 0 && <span>MASTERY BONUS +{summary.chainBonus}</span>}{summary.newRank && <span>PROMOTED: {summary.newRank}</span>}{summary.badges.map((badge) => <span key={badge}>BADGE: {badge}</span>)}</div>
+        <div className="next-run-hook"><span>NEXT RUN</span><b>{summary.nextContract}</b><small>{summary.contractChain % 3 === 2 ? "One contract away from a +180 XP mastery bonus" : "Pick another style and improve your route grade"}</small></div>
         <button className="primary-btn" onClick={startGame}><span>RUN IT AGAIN</span><small>ENTER</small></button>
       </div></section>}
     </div>

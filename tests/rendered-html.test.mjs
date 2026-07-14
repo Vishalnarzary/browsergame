@@ -35,6 +35,14 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
     readFile(new URL("../.env.example", import.meta.url), "utf8"),
   ]);
   assert.match(game, /const RUN_SECONDS = 100/);
+  assert.match(game, /type RunStyle = "planner" \| "sprinter" \| "trickster"/);
+  assert.match(game, /DAILY_CONTRACT_TARGET = 2/);
+  assert.match(game, /DAILY_REWARD = 300/);
+  assert.match(game, /PB PACE/);
+  assert.match(game, /CHOOSE YOUR RUN STYLE/);
+  assert.match(game, /MASTERY CHAIN/);
+  assert.match(game, /NEXT RUN/);
+  assert.match(game, /no missed-day penalty/);
   assert.match(game, /const SLAP_MIN = 0\.68/);
   assert.match(game, /"start" \| "playing" \| "paused" \| "summary"/);
   assert.match(game, /FALLBACK_EVENTS/);
