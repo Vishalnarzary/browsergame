@@ -19,7 +19,7 @@ function cleanBatch(value: unknown): ChatterBatch | null {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.GROQ_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return Response.json({ error: "Office chatter is using local fallback lines." }, { status: 503 });
 
   let context: { elapsedSec: number; score: number; recentLines: string[] };
@@ -35,57 +35,55 @@ export async function POST(request: Request) {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 3500);
+  const timeout = setTimeout(() => controller.abort(), 5500);
   try {
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const model = process.env.GEMINI_CHATTER_MODEL || "gemini-2.5-flash";
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
-        model: process.env.GROQ_MODEL || "openai/gpt-oss-20b",
-        temperature: 0.9,
-        max_completion_tokens: 520,
-        reasoning_effort: "low",
-        messages: [
+        contents: [
           {
-            role: "system",
-            content: "You write short, funny, recognizable office dialogue for a PG arcade game. Return 3 to 5 distinct sentences. Most should sound like workplace reminders, deadline comments, meeting chatter, or productivity remarks. At least one must be an encouraging motivational quote such as a persistence or confidence message. Keep every line natural, standalone, under 90 characters, and avoid insults, threats, sensitive topics, or repeating recent lines.",
+            role: "user",
+            parts: [
+              {
+                text: `You write short, funny, recognizable office dialogue for a PG arcade game. Return 3 to 5 distinct sentences. Make the office lines genuinely playful, with light jokes about deadlines, meetings, spreadsheets, printers, coffee, inboxes, or corporate buzzwords. Each office line should contain a small punchline or amusing twist without becoming mean. At least one line must be an encouraging motivational quote about persistence, confidence, or doing great work; it may also be gently funny. Keep every line natural, standalone, under 90 characters, and avoid insults, threats, sensitive topics, or repeating recent lines. Context: ${JSON.stringify(context)}`,
+              },
+            ],
           },
-          { role: "user", content: JSON.stringify(context) },
         ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "corporate_wars_office_chatter",
-            strict: true,
-            schema: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                sentences: {
-                  type: "array",
-                  minItems: 3,
-                  maxItems: 5,
-                  items: {
-                    type: "object",
-                    additionalProperties: false,
-                    properties: {
-                      text: { type: "string", minLength: 8, maxLength: 90 },
-                      kind: { type: "string", enum: ["office", "motivation"] },
-                    },
-                    required: ["text", "kind"],
+        generationConfig: {
+          temperature: 0.95,
+          maxOutputTokens: 700,
+          responseMimeType: "application/json",
+          responseJsonSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              sentences: {
+                type: "array",
+                minItems: 3,
+                maxItems: 5,
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    text: { type: "string", description: "A funny short office line or motivational quote under 90 characters." },
+                    kind: { type: "string", enum: ["office", "motivation"] },
                   },
+                  required: ["text", "kind"],
                 },
               },
-              required: ["sentences"],
             },
+            required: ["sentences"],
           },
         },
       }),
     });
     if (!response.ok) return Response.json({ error: "Office chatter provider unavailable." }, { status: 502 });
-    const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
-    const content = payload.choices?.[0]?.message?.content;
+    const payload = await response.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+    const content = payload.candidates?.[0]?.content?.parts?.find((part) => typeof part.text === "string")?.text;
     if (!content) return Response.json({ error: "Empty office chatter response." }, { status: 502 });
     const batch = cleanBatch(JSON.parse(content));
     if (!batch) return Response.json({ error: "Invalid office chatter batch." }, { status: 502 });

@@ -446,7 +446,7 @@ export default function CorporateWarsGame() {
     const snapshot = gameRef.current;
     let batch: ChatterBatch | null = null;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4500);
+    const timeout = setTimeout(() => controller.abort(), 6500);
     try {
       const response = await fetch("/api/office-chatter", {
         method: "POST", headers: { "content-type": "application/json" }, signal: controller.signal,

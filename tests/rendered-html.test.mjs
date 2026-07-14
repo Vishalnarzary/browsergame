@@ -25,7 +25,7 @@ test("server-renders the finished game shell", async () => {
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
-test("ships the strategic 3D loop and keeps the Groq key server-side", async () => {
+test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   const [game, scene, route, powerupRoute, chatterRoute, envExample] = await Promise.all([
     readFile(new URL("../app/components/CorporateWarsGame.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/OfficeRunner3D.ts", import.meta.url), "utf8"),
@@ -124,13 +124,18 @@ test("ships the strategic 3D loop and keeps the Groq key server-side", async () 
   assert.match(powerupRoute, /strict: true/);
   assert.match(powerupRoute, /maxItems: 4/);
   assert.match(powerupRoute, /additionalProperties: false/);
-  assert.match(chatterRoute, /process\.env\.GROQ_API_KEY/);
+  assert.match(chatterRoute, /process\.env\.GEMINI_API_KEY/);
+  assert.match(chatterRoute, /gemini-2\.5-flash/);
+  assert.match(chatterRoute, /generativelanguage\.googleapis\.com/);
+  assert.match(chatterRoute, /x-goog-api-key/);
   assert.match(chatterRoute, /minItems: 3/);
   assert.match(chatterRoute, /maxItems: 5/);
   assert.match(chatterRoute, /"motivation"/);
-  assert.match(chatterRoute, /strict: true/);
-  assert.doesNotMatch(game, /GROQ_API_KEY|NEXT_PUBLIC/);
-  assert.doesNotMatch(envExample, /NEXT_PUBLIC_GROQ/);
+  assert.match(chatterRoute, /responseMimeType: "application\/json"/);
+  assert.match(chatterRoute, /responseJsonSchema/);
+  assert.doesNotMatch(chatterRoute, /api\.groq\.com|GROQ_API_KEY/);
+  assert.doesNotMatch(game, /GROQ_API_KEY|GEMINI_API_KEY|NEXT_PUBLIC/);
+  assert.doesNotMatch(envExample, /NEXT_PUBLIC_(GROQ|GEMINI)/);
 });
 
 test("novelty endpoint fails fast without a secret so the client can use local fallbacks", async () => {
