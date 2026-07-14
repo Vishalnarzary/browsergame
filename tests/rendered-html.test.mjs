@@ -21,7 +21,7 @@ test("server-renders the finished game shell", async () => {
   const html = await response.text();
   assert.match(html, /<title>Corporate Wars — Clock In\. Slap Out\.<\/title>/i);
   assert.match(html, /CORPORATE/);
-  assert.match(html, /START THE SHIFT/);
+  assert.match(html, /START RUNNING/);
   assert.match(html, /PERSONAL BEST/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
@@ -33,9 +33,13 @@ test("ships the full loop and keeps the Groq key server-side", async () => {
     readFile(new URL("../.env.example", import.meta.url), "utf8"),
   ]);
   assert.match(game, /const RUN_SECONDS = 100/);
+  assert.match(game, /const SLAP_MIN = 0\.68/);
   assert.match(game, /"start" \| "playing" \| "paused" \| "summary"/);
   assert.match(game, /FALLBACK_EVENTS/);
   assert.match(game, /attendance bonus/i);
+  assert.match(game, /playerLane/);
+  assert.match(game, /runDistance/);
+  assert.match(game, /AUTO-RUN/);
   assert.match(game, /Digit/);
   assert.match(game, /ArrowLeft/);
   assert.match(route, /process\.env\.GROQ_API_KEY/);

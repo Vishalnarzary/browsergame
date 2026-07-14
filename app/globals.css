@@ -237,6 +237,34 @@ kbd {
 .icon-btn { padding: 8px 11px; color: rgba(231,247,241,.7); background: rgba(6,14,22,.72); border: 1px solid rgba(255,255,255,.16); border-radius: 8px; font-size: 8px; font-weight: 900; letter-spacing: .14em; cursor: pointer; transition: .2s ease; }
 .icon-btn:hover { color: var(--mint); border-color: rgba(111,255,211,.5); transform: translateY(-2px); }
 
+.runner-controls {
+  position: absolute;
+  z-index: 18;
+  left: 50%;
+  bottom: 55px;
+  display: flex;
+  gap: 9px;
+  transform: translateX(-50%);
+}
+.runner-controls button {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 45px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 11px;
+  color: #fff;
+  background: rgba(5,14,22,.78);
+  box-shadow: 0 9px 25px rgba(0,0,0,.3);
+  font-size: 19px;
+  font-weight: 900;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.runner-controls button:hover { transform: translateY(-2px); border-color: rgba(111,255,211,.55); color: var(--mint); }
+.runner-controls .slap-control { width: 82px; color: #08131c; background: var(--coral); border-color: #ff9c91; font: 900 12px "Arial Black", Arial, sans-serif; box-shadow: 0 6px 0 #8c2f35, 0 12px 27px rgba(0,0,0,.34); }
+.runner-controls .slap-control:active { transform: translateY(5px); box-shadow: 0 1px 0 #8c2f35; }
+
 .screen-overlay {
   position: absolute;
   inset: 0;
@@ -320,7 +348,7 @@ kbd {
 .final-score { margin: 18px 0; padding: 17px; border-block: 1px solid rgba(255,255,255,.12); }
 .final-score span, .summary-stats span { display: block; color: rgba(220,239,231,.5); font-size: 8px; font-weight: 900; letter-spacing: .2em; }
 .final-score strong { display: block; color: var(--mint); font: 900 clamp(47px, 7.5vw, 82px)/1 "Arial Black", sans-serif; letter-spacing: -.07em; }
-.summary-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: rgba(255,255,255,.1); }
+.summary-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: rgba(255,255,255,.1); }
 .summary-stats > div { padding: 14px; background: #0c1824; }
 .summary-stats b { display: block; margin-top: 4px; color: #fff; font: 900 21px "Arial Black", sans-serif; }
 
@@ -363,6 +391,9 @@ kbd {
   .first-prompt span { display: none; }
   .game-actions { bottom: 56px; right: 10px; flex-direction: column; }
   .lane-hints { bottom: 17px; }
+  .runner-controls { bottom: 66px; }
+  .runner-controls button { width: 54px; height: 50px; }
+  .runner-controls .slap-control { width: 91px; }
   .top-brand { display: none; }
   .start-screen { padding-inline: 22px; }
   .start-copy h1 { font-size: 18vw; }

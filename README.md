@@ -19,8 +19,9 @@ The secret is read only by `app/api/novelty-event/route.ts`. It is never sent to
 
 ## Controls
 
-- Click a lane, or press `1`–`5`, to slap it.
-- Use `←` / `→` to select a lane and `Space` to slap.
+- The employee runs forward automatically.
+- Click a lane, or press `1`–`3`, to move into it.
+- Use `←` / `→` to switch lanes and `Space` to slap when a target reaches the glowing zone.
 - Press `Esc` to pause or resume.
 - Press `Enter` to start or replay.
 
