@@ -15,6 +15,7 @@ function cleanBatch(value: unknown, recentLines: string[]): ChatterBatch | null 
   const batch = value as ChatterBatch;
   if (!Array.isArray(batch.sentences) || batch.sentences.length !== 7) return null;
   const seen = new Set(recentLines.map(normalizeLine));
+  const openings = new Set<string>();
   const sentences = batch.sentences.map((line) => {
     if (!line || typeof line.text !== "string" || !KINDS.has(line.kind)) return null;
     let text = line.text
@@ -28,8 +29,10 @@ function cleanBatch(value: unknown, recentLines: string[]): ChatterBatch | null 
     if (text.length > 90) text = `${text.slice(0, 87).replace(/\s+\S*$/, "").trimEnd()}...`;
     if (text.length < 8) return null;
     const normalized = normalizeLine(text);
-    if (!normalized || seen.has(normalized)) return null;
+    const opening = normalized.split(" ").slice(0, 2).join(" ");
+    if (!normalized || normalized.startsWith("finish the") || seen.has(normalized) || openings.has(opening)) return null;
     seen.add(normalized);
+    openings.add(opening);
     return { text, kind: line.kind };
   });
   if (sentences.some((line) => line === null) || !sentences.some((line) => line?.kind === "motivation")) return null;
@@ -72,7 +75,7 @@ export async function POST(request: Request) {
         messages: [
           {
             role: "system",
-            content: "You write short, funny, recognizable office dialogue for a PG arcade game. Return exactly 7 completely new, distinct sentences. Make the office lines playful, with light jokes about deadlines, meetings, spreadsheets, printers, coffee, inboxes, or corporate buzzwords. Each office line needs a small punchline without becoming mean. At least one line must be an encouraging motivational quote about persistence, confidence, or doing great work. Keep every line natural, standalone, under 90 characters, and avoid insults, threats, or sensitive topics. Use ASCII punctuation only: straight apostrophes and hyphens, with no smart quotes, em dashes, or emoji. Never copy, lightly rewrite, or reuse the premise of anything in recentLines.",
+            content: "You write short, funny, recognizable office dialogue for a PG arcade game. Return exactly 7 completely new, distinct sentences. Make the office lines playful, with light jokes about deadlines, meetings, spreadsheets, printers, coffee, inboxes, or corporate buzzwords. Every sentence must use a noticeably different opening and structure: mix questions, observations, requests, warnings, reactions, and punchlines. Never begin an office sentence with 'Finish the' and do not repeat an opening phrase within the batch. Each office line needs a small punchline without becoming mean. At least one line must be an encouraging motivational quote about persistence, confidence, or doing great work. Keep every line natural, standalone, under 90 characters, and avoid insults, threats, or sensitive topics. Use ASCII punctuation only: straight apostrophes and hyphens, with no smart quotes, em dashes, or emoji. Never copy, lightly rewrite, or reuse the premise of anything in recentLines.",
           },
           { role: "user", content: JSON.stringify(context) },
         ],

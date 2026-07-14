@@ -170,10 +170,15 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   assert.match(chatterRoute, /strict: true/);
   assert.match(chatterRoute, /slice\(-300\)/);
   assert.match(chatterRoute, /seen\.has\(normalized\)/);
+  assert.match(chatterRoute, /normalized\.startsWith\("finish the"\)/);
+  assert.match(chatterRoute, /openings\.has\(opening\)/);
   assert.match(chatterRoute, /buildFreshOfficeChatterFallback/);
   assert.match(chatterRoute, /X-Chatter-Source/);
   assert.match(chatterFallback, /const TASKS/);
   assert.match(chatterFallback, /const ACTIONS/);
+  assert.match(chatterFallback, /OFFICE_TEMPLATES/);
+  assert.match(chatterFallback, /MOTIVATION_TEMPLATES/);
+  assert.doesNotMatch(chatterFallback, /`Finish the \$\{task\}/);
   assert.match(chatterFallback, /sentences\.length === 7/);
   assert.match(chatterFallback, /kind: "motivation"/);
   assert.doesNotMatch(chatterRoute, /GEMINI|generativelanguage\.googleapis\.com/);
@@ -214,6 +219,9 @@ test("office chatter endpoint returns seven fresh fallback lines without a secre
   assert.equal(batch.sentences.length, 7);
   assert.equal(new Set(batch.sentences.map((line) => line.text)).size, 7);
   assert.ok(batch.sentences.some((line) => line.kind === "motivation"));
+  const officeOpenings = batch.sentences.filter((line) => line.kind === "office").map((line) => line.text.split(/[ :;?]/)[0]);
+  assert.ok(new Set(officeOpenings).size >= 5);
+  assert.ok(batch.sentences.every((line) => !/^finish the\b/i.test(line.text)));
 });
 
 test("includes the running loop, both randomized slaps, and the bone-break recording", async () => {
