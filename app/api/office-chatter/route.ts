@@ -17,8 +17,16 @@ function cleanBatch(value: unknown, recentLines: string[]): ChatterBatch | null 
   const seen = new Set(recentLines.map(normalizeLine));
   const sentences = batch.sentences.map((line) => {
     if (!line || typeof line.text !== "string" || !KINDS.has(line.kind)) return null;
-    const text = line.text.replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
-    if (text.length < 8 || text.length > 90) return null;
+    let text = line.text
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201c\u201d]/g, '"')
+      .replace(/[\u2013\u2014]/g, "-")
+      .replace(/[^\x20-\x7e]/g, "")
+      .replace(/[<>]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text.length > 90) text = `${text.slice(0, 87).replace(/\s+\S*$/, "").trimEnd()}...`;
+    if (text.length < 8) return null;
     const normalized = normalizeLine(text);
     if (!normalized || seen.has(normalized)) return null;
     seen.add(normalized);
@@ -41,7 +49,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid chatter context." }, { status: 400 });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     const fallback = buildFreshOfficeChatterFallback(context.recentLines, context.elapsedSec);
     return fallback
@@ -50,49 +58,50 @@ export async function POST(request: Request) {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 18000);
+  const timeout = setTimeout(() => controller.abort(), 9000);
   try {
-    const model = process.env.GEMINI_CHATTER_MODEL || "gemini-2.5-flash";
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
-      headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
-        contents: [
+        model: process.env.GROQ_CHATTER_MODEL || process.env.GROQ_MODEL || "openai/gpt-oss-20b",
+        temperature: 0.95,
+        max_completion_tokens: 800,
+        reasoning_effort: "low",
+        messages: [
           {
-            role: "user",
-            parts: [
-              {
-                text: `You write short, funny, recognizable office dialogue for a PG arcade game. Return exactly 7 completely new, distinct sentences. Make the office lines genuinely playful, with light jokes about deadlines, meetings, spreadsheets, printers, coffee, inboxes, or corporate buzzwords. Each office line should contain a small punchline or amusing twist without becoming mean. At least one line must be an encouraging motivational quote about persistence, confidence, or doing great work; it may also be gently funny. Keep every line natural, standalone, under 90 characters, and avoid insults, threats, or sensitive topics. Never copy, lightly rewrite, or reuse the premise of anything in recentLines. Context: ${JSON.stringify(context)}`,
-              },
-            ],
+            role: "system",
+            content: "You write short, funny, recognizable office dialogue for a PG arcade game. Return exactly 7 completely new, distinct sentences. Make the office lines playful, with light jokes about deadlines, meetings, spreadsheets, printers, coffee, inboxes, or corporate buzzwords. Each office line needs a small punchline without becoming mean. At least one line must be an encouraging motivational quote about persistence, confidence, or doing great work. Keep every line natural, standalone, under 90 characters, and avoid insults, threats, or sensitive topics. Use ASCII punctuation only: straight apostrophes and hyphens, with no smart quotes, em dashes, or emoji. Never copy, lightly rewrite, or reuse the premise of anything in recentLines.",
           },
+          { role: "user", content: JSON.stringify(context) },
         ],
-        generationConfig: {
-          temperature: 0.95,
-          maxOutputTokens: 700,
-          thinkingConfig: { thinkingBudget: 0 },
-          responseMimeType: "application/json",
-          responseJsonSchema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              sentences: {
-                type: "array",
-                minItems: 7,
-                maxItems: 7,
-                items: {
-                  type: "object",
-                  additionalProperties: false,
-                  properties: {
-                    text: { type: "string", description: "A funny short office line or motivational quote under 90 characters." },
-                    kind: { type: "string", enum: ["office", "motivation"] },
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "corporate_wars_office_chatter",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                sentences: {
+                  type: "array",
+                  minItems: 7,
+                  maxItems: 7,
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      text: { type: "string", description: "A funny short office line or motivational quote under 90 characters." },
+                      kind: { type: "string", enum: ["office", "motivation"] },
+                    },
+                    required: ["text", "kind"],
                   },
-                  required: ["text", "kind"],
                 },
               },
+              required: ["sentences"],
             },
-            required: ["sentences"],
           },
         },
       }),
@@ -101,8 +110,8 @@ export async function POST(request: Request) {
       const fallback = buildFreshOfficeChatterFallback(context.recentLines, context.elapsedSec);
       return fallback ? Response.json(fallback, { headers: { "Cache-Control": "no-store", "X-Chatter-Source": "fallback" } }) : Response.json({ error: "Office chatter provider unavailable." }, { status: 502 });
     }
-    const payload = await response.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-    const content = payload.candidates?.[0]?.content?.parts?.find((part) => typeof part.text === "string")?.text;
+    const payload = await response.json() as { choices?: { message?: { content?: string } }[] };
+    const content = payload.choices?.[0]?.message?.content;
     if (!content) {
       const fallback = buildFreshOfficeChatterFallback(context.recentLines, context.elapsedSec);
       return fallback ? Response.json(fallback, { headers: { "Cache-Control": "no-store", "X-Chatter-Source": "fallback" } }) : Response.json({ error: "Empty office chatter response." }, { status: 502 });
@@ -112,7 +121,7 @@ export async function POST(request: Request) {
       const fallback = buildFreshOfficeChatterFallback(context.recentLines, context.elapsedSec);
       return fallback ? Response.json(fallback, { headers: { "Cache-Control": "no-store", "X-Chatter-Source": "fallback" } }) : Response.json({ error: "Invalid office chatter batch." }, { status: 502 });
     }
-    return Response.json(batch, { headers: { "Cache-Control": "no-store" } });
+    return Response.json(batch, { headers: { "Cache-Control": "no-store", "X-Chatter-Source": "groq" } });
   } catch {
     const fallback = buildFreshOfficeChatterFallback(context.recentLines, context.elapsedSec);
     return fallback ? Response.json(fallback, { headers: { "Cache-Control": "no-store", "X-Chatter-Source": "fallback" } }) : Response.json({ error: "Office chatter planning timed out." }, { status: 504 });

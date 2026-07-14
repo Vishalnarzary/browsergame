@@ -949,7 +949,7 @@ export default function CorporateWarsGame() {
 
       {screen === "start" && <section className="screen-overlay start-screen">
         <div className="start-copy"><div className="eyebrow"><span>REAL 3D OFFICE RUNNER</span><i /> THINK TWO MOVES AHEAD</div><h1>CORPORATE<br /><em>WARS</em></h1>
-          <p>You are the only runner. Control the pace, jump office tables, and chase AI-planned prototype drops. Every minute, Groq schedules up to four glowing power-ups across the three lanes.</p>
+          <p>You are the only runner. Control the pace, jump office tables and find surprises.</p>
           <div className={`daily-brief ${daily.claimed ? "claimed" : ""}`}><div><span>DAILY BRIEF</span><b>{daily.claimed ? "BONUS SECURED" : `COMPLETE ${DAILY_CONTRACT_TARGET} CONTRACTS`}</b></div><strong>{daily.contracts}/{DAILY_CONTRACT_TARGET}</strong><small>{daily.claimed ? "Come back tomorrow for a fresh briefing" : `+${DAILY_REWARD} XP · no missed-day penalty`}</small></div>
           <div className="style-picker" aria-label="Choose a run style"><span>CHOOSE YOUR RUN STYLE</span><div>{(Object.keys(RUN_STYLES) as RunStyle[]).map((style) => <button key={style} className={runStyle === style ? "selected" : ""} onClick={() => setRunStyle(style)}><b>{RUN_STYLES[style].label}</b><small>{RUN_STYLES[style].kicker}</small></button>)}</div><p>{RUN_STYLES[runStyle].detail}</p></div>
           <button className="primary-btn" onClick={startGame}><span>START RUNNING</span><small>ENTER / SPACE</small></button>

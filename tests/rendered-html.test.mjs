@@ -44,6 +44,8 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   assert.match(game, /DAILY_REWARD = 300/);
   assert.match(game, /PB PACE/);
   assert.match(game, /CHOOSE YOUR RUN STYLE/);
+  assert.match(game, /You are the only runner\. Control the pace, jump office tables and find surprises\./);
+  assert.doesNotMatch(game, /chase AI-planned prototype drops|Every minute, Groq schedules/);
   assert.match(game, /MASTERY CHAIN/);
   assert.match(game, /NEXT RUN/);
   assert.match(game, /no missed-day penalty/);
@@ -151,16 +153,16 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   assert.match(powerupRoute, /strict: true/);
   assert.match(powerupRoute, /maxItems: 4/);
   assert.match(powerupRoute, /additionalProperties: false/);
-  assert.match(chatterRoute, /process\.env\.GEMINI_API_KEY/);
-  assert.match(chatterRoute, /gemini-2\.5-flash/);
-  assert.match(chatterRoute, /generativelanguage\.googleapis\.com/);
-  assert.match(chatterRoute, /x-goog-api-key/);
+  assert.match(chatterRoute, /process\.env\.GROQ_API_KEY/);
+  assert.match(chatterRoute, /openai\/gpt-oss-20b/);
+  assert.match(chatterRoute, /api\.groq\.com\/openai\/v1\/chat\/completions/);
+  assert.match(chatterRoute, /Authorization: `Bearer \$\{apiKey\}`/);
   assert.match(chatterRoute, /minItems: 7/);
   assert.match(chatterRoute, /maxItems: 7/);
   assert.match(chatterRoute, /sentences\.length !== 7/);
   assert.match(chatterRoute, /"motivation"/);
-  assert.match(chatterRoute, /responseMimeType: "application\/json"/);
-  assert.match(chatterRoute, /responseJsonSchema/);
+  assert.match(chatterRoute, /type: "json_schema"/);
+  assert.match(chatterRoute, /strict: true/);
   assert.match(chatterRoute, /slice\(-300\)/);
   assert.match(chatterRoute, /seen\.has\(normalized\)/);
   assert.match(chatterRoute, /buildFreshOfficeChatterFallback/);
@@ -169,9 +171,9 @@ test("ships the strategic 3D loop and keeps AI keys server-side", async () => {
   assert.match(chatterFallback, /const ACTIONS/);
   assert.match(chatterFallback, /sentences\.length === 7/);
   assert.match(chatterFallback, /kind: "motivation"/);
-  assert.doesNotMatch(chatterRoute, /api\.groq\.com|GROQ_API_KEY/);
-  assert.doesNotMatch(game, /GROQ_API_KEY|GEMINI_API_KEY|NEXT_PUBLIC/);
-  assert.doesNotMatch(envExample, /NEXT_PUBLIC_(GROQ|GEMINI)/);
+  assert.doesNotMatch(chatterRoute, /GEMINI|generativelanguage\.googleapis\.com/);
+  assert.doesNotMatch(game, /GROQ_API_KEY|NEXT_PUBLIC/);
+  assert.doesNotMatch(envExample, /NEXT_PUBLIC_GROQ/);
 });
 
 test("novelty endpoint fails fast without a secret so the client can use local fallbacks", async () => {
